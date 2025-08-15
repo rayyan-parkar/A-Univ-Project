@@ -1,7 +1,12 @@
 import { WebSocket } from 'ws';
+import dotenv from 'dotenv';
+
+dotenv.config()
+
+const key = process.env.VITE_SENDER_KEY;
 
 // Creates a new WebSocket connection to the specified URL.
-const socket = new WebSocket('ws://localhost:8080');
+const socket = new WebSocket(`ws://localhost:8080?role=sender&token=${key}`);
 const data = ['Hello', 'World', 'This', 'Is', 'A', 'Test']
 let currentIndex = 0;
 

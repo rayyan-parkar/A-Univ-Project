@@ -24,7 +24,7 @@ wss.on('connection', function connection(ws) {
 
 
     //Deals with client disconnecting.
-    wss.on('close', () => {
+    ws.on('close', () => {
         clients.delete(ws);
         console.log('Client disconnected')
     });

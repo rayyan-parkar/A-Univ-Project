@@ -2,18 +2,29 @@ import { WebSocket } from 'ws';
 
 // Creates a new WebSocket connection to the specified URL.
 const socket = new WebSocket('ws://localhost:8080');
+const data = ['Hello', 'World', 'This', 'Is', 'A', 'Test']
+let currentIndex = 0;
 
 // Executes when the connection is successfully established.
+// Sends data every 16 ms to the server.
 socket.addEventListener('open', event => {
   console.log('WebSocket connection established!');
-  // Sends a message to the WebSocket server.
-  socket.send('Hello Server!');
-});
+  
+  const interval = setInterval(()=> {
+      if (currentIndex<data.length) {
+        socket.send(data[currentIndex]);
+        console.log(`Sent: ${data[currentIndex]}`)
+        currentIndex++
+      }
 
-// Listen for messages and executes when a message is received from the server.
-socket.addEventListener('message', event => {
-  console.log('Message from server: ', event.data);
-});
+      else {
+        clearInterval(interval);
+        console.log("All Data Succesfully Sent, closing connection.")
+        socket.close();
+      }
+    }, 16);
+
+  });
 
 // Executes when the connection is closed, providing the close code and reason.
 socket.addEventListener('close', event => {

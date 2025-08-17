@@ -15,9 +15,17 @@ function App() {
       setServerMessage(event.data);
     }
 
-    return() => socket.close();
-    
+    return() => {
+      if (socket.readyState===WebSocket.CONNECTING) {
+        socket.onopen = () => socket.close();
+      }
+
+      else if (socket.readyState ===WebSocket.OPEN) {
+        socket.close()
+      }
+    };
   }, []);
+  
   return (
     <div>
       <h1>Server says: {serverMessage}</h1>

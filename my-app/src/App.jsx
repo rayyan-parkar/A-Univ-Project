@@ -1,5 +1,4 @@
-import { useState, useEffect } from 'react'
-import './App.css'
+import { useState, useEffect } from 'react';
 
 function App() {
 
@@ -25,7 +24,7 @@ function App() {
       }
     };
   }, []);
-  
+
   return (
     <div>
       <h1>Server says: {serverMessage}</h1>

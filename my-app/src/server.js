@@ -14,13 +14,31 @@ const validTokens = {
 
 //Map of clients
 const clients = new Map();
+const allowed_IPs = new Set([
+    '::1',
+    '::ffff:127.0.0.1'
+]);
 
 wss.on('connection', function connection(ws, req) {
+
+    //console.log(!req.socket.remoteAddress in allowed_IPs);
+    if (!(allowed_IPs.has(req.socket.remoteAddress))) {
+        console.log(`${req.socket.remoteAddress} tried to connect.`);
+        ws.close(1008, 'IP NOT WHITELISTED!');
+        return;
+    }
+
+    ws.on('error', (error)=> {
+        console.log(`ERROR: ${error.message}`);
+        ws.close(1008, 'Violated message rules.')
+    });
+
     const {query} = parse(req.url, true);
     const clientRole = query.role;
 
     //If Tokens are invalid, refuse connection.
-    if (!(query.role==='sender' && query.token===validTokens['sender']) && !(query.role==='receiver' && query.token===validTokens['receiver'])) {
+    if (!(query.role==='sender' && query.token===
+    validTokens['sender']) && !(query.role==='receiver' && query.token===validTokens['receiver'])) {
         console.log('Tokens are invalid, closing connection.')
         ws.close(1008, 'Invalid authentication');
         return;

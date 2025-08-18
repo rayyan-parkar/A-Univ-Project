@@ -14,6 +14,7 @@ const validTokens = {
 
 //Map of clients
 const clients = new Map();
+let totalReceivers = 0;
 const allowed_IPs = new Set([
     '::1',
     '::ffff:127.0.0.1'
@@ -37,12 +38,22 @@ wss.on('connection', function connection(ws, req) {
     const clientRole = query.role;
 
     //If Tokens are invalid, refuse connection.
-    if (!(query.role==='sender' && query.token===
-    validTokens['sender']) && !(query.role==='receiver' && query.token===validTokens['receiver'])) {
+    if (!(query.role==='sender' && query.token===validTokens['sender']) && !(query.role==='receiver' && query.token===validTokens['receiver'])) {
         console.log('Tokens are invalid, closing connection.')
         ws.close(1008, 'Invalid authentication');
         return;
     }
+
+    if (totalReceivers===2 && query.role==='receiver') {
+        console.log('Max receivers present, connection blocked!');
+        ws.close(1008, 'Receiver limit reached!');
+        return
+    }
+
+    if (query.role==='receiver') {
+        totalReceivers+=1;
+    }
+    console.log('Current Receivers:', totalReceivers);
 
     //If tokens are valid, allow client to connect and add to map.
     console.log(`${clientRole} Connected!`);
@@ -71,5 +82,10 @@ wss.on('connection', function connection(ws, req) {
         const clientInfo = clients.get(ws);
         clients.delete(ws);
         console.log(`${clientInfo?.role || 'Unknown'} disconnected`);
+
+        if (clientRole==='receiver') {
+            totalReceivers-=1;
+            console.log('Current Receivers, after stopping connection:', totalReceivers);
+        }
     });
 });

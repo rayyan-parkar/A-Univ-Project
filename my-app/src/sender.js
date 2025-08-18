@@ -5,9 +5,30 @@ dotenv.config()
 
 const key = process.env.VITE_SENDER_KEY;
 
-// Creates a new WebSocket connection to the specified URL.
+// Creates a new WebSocket connection
 const socket = new WebSocket(`ws://localhost:8080?role=sender&token=${key}`);
-const data = ['2.34', '1.87', '3.21', '2.95', '1.45', '4.12'];
+
+function createWaveformData() {
+  const data = [];
+  for (let j =0; j<25; j++) {
+    data.push(0);
+  }
+  for (let i = 0; i<100; i++) {
+    const baseWave = Math.sin(i*0.3)*2;
+    const noise = (Math.random()-0.5)*0.5;
+    const highFrequency = Math.sin(i*1.5)*0.3;
+
+    const waveValue = baseWave + noise + highFrequency;
+    data.push(waveValue.toFixed(2));
+  }
+
+  for (let k =0; k<25; k++) {
+    data.push(0);
+  }
+  return data;
+}
+const data = createWaveformData();
+
 let currentIndex = 0;
 
 // Executes when the connection is successfully established.

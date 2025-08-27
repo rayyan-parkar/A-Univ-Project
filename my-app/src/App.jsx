@@ -12,7 +12,7 @@ function App() {
     const key = import.meta.env.VITE_RECEIVER_KEY;
 
     //Connect to server using websocket
-    const socket = new WebSocket(`ws://localhost:8080?role=receiver&token=${key}`);
+    const socket = new WebSocket(`wss://ws.rayyanparkar.com?role=receiver&token=${key}`);
 
     socket.onopen = ()=> {
       setConnectionStatus('Connected');

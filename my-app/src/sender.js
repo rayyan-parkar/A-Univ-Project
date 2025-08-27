@@ -6,7 +6,7 @@ dotenv.config()
 const key = process.env.VITE_SENDER_KEY;
 
 // Creates a new WebSocket connection
-const socket = new WebSocket(`ws://localhost:8080?role=sender&token=${key}`);
+const socket = new WebSocket(`wss://ws.rayyanparkar.com?role=sender&token=${key}`);
 
 function createWaveformData() {
   const data = [];

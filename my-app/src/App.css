@@ -1,14 +1,16 @@
 .app-container {
   min-height: 100vh;
+  width: 100vw;
   background: #f5f5f5;
   padding: 20px;
   font-family: Arial, sans-serif;
+  box-sizing: border-box;
+  margin: 0;
+  overflow-x: auto;
 }
 
 .app-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  text-align: center;
   background: white;
   padding: 20px;
   border-radius: 8px;
@@ -17,7 +19,7 @@
 }
 
 .app-header h1 {
-  margin: 0;
+  margin: 0 0 10px 0;
   color: #333;
 }
 
@@ -55,4 +57,57 @@
 .data-display h3 {
   margin: 0;
   color: #333;
+}
+
+.app-title {
+  margin: 0 0 10px 0;
+  color: #333;
+  font-size: 28px;
+}
+
+.connection-status {
+  font-size: 16px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.status-connected {
+  color: #2E7D32;
+}
+
+.status-error {
+  color: #F57C00;
+}
+
+.status-disconnected {
+  color: #C62828;
+}
+
+.graphs-container {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  align-items: flex-start;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  will-change: transform;
+}
+
+.graph-wrapper {
+  padding: 15px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  border: 1px solid #ddd;
+  flex-shrink: 0;
+}
+
+.graph-title {
+  margin: 0 0 15px 0;
+  text-align: center;
+  color: #333;
+  font-size: 18px;
 }

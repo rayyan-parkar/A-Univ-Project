@@ -4,6 +4,12 @@
 
 2. Install VSCode so that the client can be set up.
 
+3. Vite
+
+4. ChartJS
+
+5. react-three/fiber three
+
 # Steps
 
 1. Download the folder titled client from the github repository [FOUND HERE] (https://github.com/ClumsyWarrior/A-Univ-Project/tree/main)

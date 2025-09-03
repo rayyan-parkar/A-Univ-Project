@@ -1,2 +1,2 @@
-import './webrtc.js';
+//import './webrtc.js'; DISABLED UNTIL FURTHER NOTICE
 import './api.js';

@@ -35,7 +35,7 @@ wss.on('connection', function connection(ws, req) {
 
     if (totalReceivers===2 && query.role==='receiver') {
         console.log('Max receivers present, connection blocked!');
-        ws.close(1008, 'Receiver limit reached!');
+        ws.close(1013, 'Receiver limit reached!');
         return
     }
 

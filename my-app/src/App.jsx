@@ -21,7 +21,8 @@ function App() {
   useEffect(()=> {
   const connectWebSocket = () => {
     const key = import.meta.env.VITE_RECEIVER_KEY;
-    const socket = new WebSocket(`ws://localhost:8080?role=receiver&token=${key}`);
+    //const socket = new WebSocket(`ws://localhost:8080?role=receiver&token=${key}`);
+    const socket = new WebSocket(`wss://ws.rayyanparkar.com?role=receiver&token=${key}`);
     socketRef.current = socket;
 
     socket.onopen = ()=> {
@@ -32,6 +33,11 @@ function App() {
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
+      }
+
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+        countdownIntervalRef.current = null;
       }
     }
 
@@ -69,6 +75,12 @@ function App() {
     socket.onclose = (event)=> {
   console.log('Websocket closed:', event.code, event.reason);
   
+  if (event.code === 1013 || event.reason === 'Server capacity exceeded') {
+    setConnectionStatus('🟡 Max receivers already connected, cannot connect.');
+    console.log('Connection rejected: Max receivers reached.');
+    return; // Don't attempt to reconnect
+  }
+
   if (reconnectAttemptsRef.current < 3) {
     reconnectAttemptsRef.current++;
     
@@ -76,11 +88,16 @@ function App() {
     setCountdown(5);
     setConnectionStatus(`🔴 Disconnected! (Attempt ${reconnectAttemptsRef.current}/3)`);
     
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
     // Update countdown every second
     countdownIntervalRef.current = setInterval(() => {
       setCountdown(prev => {
         if (prev <= 1) {
           clearInterval(countdownIntervalRef.current);
+          countdownIntervalRef.current = null;
           return 0;
         }
         return prev - 1;

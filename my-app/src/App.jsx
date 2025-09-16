@@ -2,13 +2,18 @@ import { useState, useEffect, useRef } from 'react';
 import VibrationSensor from './VibrationSensor';
 import SphericalGraph from './SphericalGraph';
 import CommunicationData from './CommunicationData'
+import logo from '/logo.png';
+import rightLogo from '/right-logo.jpg';
+import videoUnavailable from '/video-unavailable.jpg';
 import './App.css';
 
 function App() {
 
   const [connectionStatus, setConnectionStatus] = useState('Disconnected');
   const [vibrationValue, setVibrationValue] = useState(null);
-  const [vectorData, setVectorData] = useState([]);
+  const [vectorData1, setVectorData1] = useState([]);
+  const [vectorData2, setVectorData2] = useState([]);
+  const [vectorData3, setVectorData3] = useState([]);
   const [countdown, setCountdown] = useState(0);
   const reconnectTimeoutRef = useRef(null);
   const socketRef = useRef(null);
@@ -53,13 +58,50 @@ function App() {
             setVibrationValue(parsedValue);
           }
         }
-        else if (parsedMessage.type === 'vector') {
-          setVectorData(parsedMessage.data);
-        }
+        
+      else if (parsedMessage.type === 'vector') {
+    const colors = ['#ff4500', '#009908', '#8a2be2'];
+    
+    // Graph 1: First 3 vectors (indices 0, 1, 2)
+    const graph1Vectors = [];
+    for (let i = 0; i < 3; i++) {
+        graph1Vectors.push({
+            x: parsedMessage.data[i][0],
+            y: parsedMessage.data[i][1],
+            z: parsedMessage.data[i][2],
+            color: colors[i]
+        });
+    }
+    
+    // Graph 2: Second 3 vectors (indices 3, 4, 5)
+    const graph2Vectors = [];
+    for (let i = 3; i < 6; i++) {
+        graph2Vectors.push({
+            x: parsedMessage.data[i][0],
+            y: parsedMessage.data[i][1],
+            z: parsedMessage.data[i][2],
+            color: colors[i - 3] // Reset color index
+        });
+    }
+    
+    // Graph 3: Last 3 vectors (indices 6, 7, 8)
+    const graph3Vectors = [];
+    for (let i = 6; i < 9; i++) {
+        graph3Vectors.push({
+            x: parsedMessage.data[i][0],
+            y: parsedMessage.data[i][1],
+            z: parsedMessage.data[i][2],
+            color: colors[i - 6] // Reset color index
+        });
+    }
+    
+    setVectorData1(graph1Vectors);   // Vectors 0, 1, 2
+    setVectorData2(graph2Vectors);   // Vectors 3, 4, 5
+    setVectorData3(graph3Vectors);   // Vectors 6, 7, 8
+    } 
 
         else if (parsedMessage.type== 'communication') {
-          console.log(parsedMessage.data);
-          setCommunicationData(parsedMessage.data);
+            setCommunicationData(parsedMessage.data);
         }
       }
       catch (error) {
@@ -144,42 +186,65 @@ function App() {
 
 
   const getStatusClass = () => {
-  if (connectionStatus.includes('🟢')) return 'status-connected';
-  if (connectionStatus.includes('🟡')) return 'status-error';
-  return 'status-disconnected';
+    if (connectionStatus.includes('🟢')) return 'status-connected';
+    if (connectionStatus.includes('🟡')) return 'status-error';
+    return 'status-disconnected';
   };
 
   return (
     <div className="app-container">
-      <div className="app-header">
-        <h1 className="app-title">Real-Time Data Visualization</h1>
+      <div className="top-container">
+        <div className="logo">
+          <img src={logo} alt="UNAVAILABLE" />
+        </div>
+
+        <h1>Fixed Precision Impact on  State-of-Polarization Sensing using Coherent Transceivers</h1>
+
+        <div className="logo">
+          <img src={rightLogo} alt="UNAVAILABLE" />
+        </div>
+      </div>
+      
+      <div className="body-container">
+        <h2>
+          Aston Institute of Photonics Technologies Aston University, 
+          Birmingham, UK Geraldo Gomes, Rafael Vieira, Pedro Freire, 
+          Yaroslav Prylepskiy, Sergei Turitsyn
+        </h2>
+
         <div className={`connection-status ${getStatusClass()}`}>
           Connection Status: {connectionStatus}
           {countdown > 0 && ` (${countdown}s...)`}
         </div>
-      </div>
 
-      <div className="graphs-container">
-        <div className="graph-wrapper">
-          <h3 className="graph-title">Vibration Analysis</h3>
-          <VibrationSensor latestData={vibrationValue} />
+        <div className="grid-container">
+          <div className="top">
+          <div className="video-container">
+            <img src={videoUnavailable} alt="ERROR"/>
+          </div>
+          <div className="spherical-container">
+            <SphericalGraph vectorData={vectorData1} enableCameraControls={false} enableRotation={true}/>
+            <SphericalGraph vectorData={vectorData2} enableCameraControls={false} enableRotation={true}/>
+            <SphericalGraph vectorData={vectorData3} enableCameraControls={false} enableRotation={true}/>
+          </div>
+          </div>
+          <div className="bottom">
+
+          <div className="vibration-container">
+            <VibrationSensor latestData={vibrationValue}/>
+            <VibrationSensor latestData={vibrationValue}/>
+          </div>
+          <div>
+          <h2>Communication Data</h2>
+          <div className="comms-container">
+            <CommunicationData latestData={communicationData}/>
+            <CommunicationData latestData={communicationData}/>
+            <CommunicationData latestData={communicationData}/>
+          </div>
+          </div>
+          </div>
         </div>
-
-        <div className="graph-wrapper">
-          <h3 className="graph-title">Vector Analysis</h3>
-          <SphericalGraph
-            vectorData={vectorData}
-            title=""
-            enableRotation={true}
-            enableCameraControls={false}
-          />
-        </div>
-
-        <div className="graph-wrapper">
-        <h3 className="graph-title">Communication Data</h3>
-        <CommunicationData latestData={communicationData} />
-      </div>
-
+        
       </div>
     </div>
   )

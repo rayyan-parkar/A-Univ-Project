@@ -1,28 +1,81 @@
+html, body {
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  background-color: white;
+}
+
+#root {
+  min-height: 100vh;
+  width: 100%;
+}
+
 .app-container {
   min-height: 100vh;
-  width: 100vw;
-  background: #f5f5f5;
-  padding: 20px;
-  font-family: Arial, sans-serif;
-  box-sizing: border-box;
-  margin: 0;
-  overflow-x: auto;
-}
-
-.app-header {
-  text-align: center;
+  width: 100%;
   background: white;
-  padding: 20px;
-  border-radius: 8px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
 }
 
-.app-header h1 {
-  margin: 0 0 10px 0;
-  color: #333;
+.top-container {
+  height: auto;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
 }
 
+.logo {
+  width: 160px;
+  height: 80px;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.logo img{
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+}
+
+.main-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: auto;
+  color:black;
+  margin: 0;
+  text-align: center;
+  word-wrap: break-word;
+  width: fit-content;
+}
+
+.top-container h1 {
+  color:black;
+  margin: 0;
+  text-align: center;
+  word-wrap: break-word;
+  width: 80%;
+}
+
+.body-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.body-container h2 {
+  color: black;
+  font-weight: 100;
+  width: 80%;
+  text-align: center;
+  margin: 0 auto;
+  margin-top: 10px;
+}
 .status {
   display: flex;
   align-items: center;
@@ -30,39 +83,12 @@
   font-weight: bold;
 }
 
-.status-indicator {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #ccc;
-}
-
 .status-indicator.connected {
   background: #4CAF50;
 }
 
-.status-indicator.error,
-.status-indicator.disconnected {
+.status-indicator.error, .status-indicator.disconnected {
   background: #f44336;
-}
-
-.data-display {
-  background: white;
-  padding: 15px 20px;
-  border-radius: 8px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.data-display h3 {
-  margin: 0;
-  color: #333;
-}
-
-.app-title {
-  margin: 0 0 10px 0;
-  color: #333;
-  font-size: 28px;
 }
 
 .connection-status {
@@ -86,28 +112,61 @@
   color: #C62828;
 }
 
-.graphs-container {
+.grid-container {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  height: auto;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  flex: 1;
+}
+
+.video-container img {
+  max-width: 90%;
+  max-height: 90%;
+  object-fit: contain;
+}
+
+.spherical-container {
   display: flex;
-  gap: 20px;
-  justify-content: center;
-  align-items: flex-start;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  will-change: transform;
+  flex-direction: row;
 }
 
-.graph-wrapper {
-  padding: 15px;
-  background-color: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  border: 1px solid #ddd;
-  flex-shrink: 0;
+.vibration-container {
+  display: flex;
+  flex-direction: row;
 }
 
-.graph-title {
-  margin: 0 0 15px 0;
-  text-align: center;
-  color: #333;
-  font-size: 18px;
+.comms-container {
+  display: flex;
+  flex: row;
+}
+
+.spherical-graph {
+  height: 275px;
+  width: 275px;
+}
+
+.vibration-chart {
+  height: 335px;
+  width: 335px;
+}
+
+.comms-graph {
+  height: 275px;
+  width: 300px;
+}
+
+.top {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-evenly;
+}
+
+.bottom {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-evenly;
+  margin-top: 10px;
 }

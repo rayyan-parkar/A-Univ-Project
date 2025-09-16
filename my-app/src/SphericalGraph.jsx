@@ -11,7 +11,7 @@ function Vector({ start, end, color }) {
   return (
     <group>
       <line geometry={geometry}>
-        <lineBasicMaterial color={color} linewidth={3} />
+        <lineBasicMaterial color={color} linewidth={4} />
       </line>
       <mesh position={[end.x, end.y, end.z]}>
         <sphereGeometry args={[0.06, 12, 12]} />
@@ -33,8 +33,8 @@ function WireframeSphere({ enableRotation = false }) {
 
   return (
     <mesh ref={meshRef}>
-      <sphereGeometry args={[1, 32, 24]} />
-      <meshBasicMaterial color="#888888" wireframe />
+      <sphereGeometry args={[1.25, 32, 24]} />
+      <meshBasicMaterial color="#999999" wireframe />
     </mesh>
   );
 }
@@ -44,7 +44,7 @@ function SphericalGraph({
   vectorData = [], 
   title = "Low Precision",
   enableRotation = false,
-  enableCameraControls = false 
+  enableCameraControls = true 
 }) {
   const [vectors, setVectors] = useState([]);
 
@@ -61,34 +61,35 @@ function SphericalGraph({
   [vectorData]);
 
 return (
-    <div style={{ 
-        width: '400px', 
-        height: '400px',
-        background: '#ffffff',
-        borderRadius: '8px',
-        border: '1px solid #000000'
-    }}>
+    <div className="spherical-graph">
     <Canvas camera={{ position: [2.5, 2.5, 2.5], fov: 50 }}>
       
       <WireframeSphere enableRotation={enableRotation} />
       
       {enableCameraControls && (
         <OrbitControls 
-          enablePan={false}
-          enableZoom={false}
-          enableRotate={false}
-          autoRotate={false}
+          enablePan={true}
+          enableZoom={true}
+          enableRotate={true}
+          autoRotate={true}
         />
       )}
 
-      {vectors.map((vector, index) => (
-        <Vector
-          key={index}
-          start={new THREE.Vector3(0, 0, 0)}
-          end={new THREE.Vector3(vector.x, vector.y, vector.z)}
-          color={vector.color || '#ff6b6b'}
-        />
-      ))}
+      {(() => {
+        const vectorElements = [];
+        for (let i = 0; i < vectors.length; i++) {
+          const vector = vectors[i];
+          vectorElements.push(
+            <Vector
+              key={i}
+              start={new THREE.Vector3(0, 0, 0)}
+              end={new THREE.Vector3(vector.x, vector.y, vector.z)}
+              color={vector.color || '#ff6b6b'}
+            />
+          );
+        }
+        return vectorElements;
+      })()}
     </Canvas>
   </div>
 );

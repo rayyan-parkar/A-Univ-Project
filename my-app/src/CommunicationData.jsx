@@ -96,13 +96,7 @@ function CommunicationData({latestData}) {
     };
 
     return (
-    <div style={{ 
-        width: '400px', 
-        height: '400px',
-        background: '#ffffff',
-        borderRadius: '8px',
-        border: '1px solid #000000'
-    }}>
+    <div className ="comms-graph">
         <Scatter data={chartData} options={options} />
     </div>
     ); 

@@ -1,123 +1,196 @@
 import { WebSocket } from 'ws';
 import dotenv from 'dotenv';
+import fs, { createReadStream } from 'fs';
+import path from 'path';
+import { createInterface } from 'readline';
+// Path and FS required to handle async file reading and easier path management (Don't need to worry about Unix systems breaking.)
+// dotenv to read env variables and ws for websocket connections.
 
 dotenv.config()
 
 const key = process.env.VITE_SENDER_KEY;
+const sphericalPathLow = './src/data/SphericalData_low.txt';
+const sphericalPathMed = './src/data/SphericalData_medium.txt';
+const sphericalPathHigh = './src/data/SphericalData_high.txt';
+const communicationPathLow = './src/data/CommunicationData_low.txt';
+const communicationPathMed = './src/data/CommunicationData_medium.txt';
+const communicationPathHigh = './src/data/CommunicationData_high.txt';
+const vibrationPath = './src/data/VibrationData.txt';
+const vibrationPathFPGA = './src/data/VibrationData_FPGA.txt';
 
-// Creates a new WebSocket connection
-const socket = new WebSocket(`wss://ws.rayyanparkar.com?role=sender&token=${key}`);
+async function readNewLinesStream(filePath, lastPosition) {
+  return new Promise((resolve, reject)=> {
+    if (!fs.existsSync(filePath)) {
+      resolve({lines: [], newPosition: lastPosition});
+      return;
+    }
+
+    const stats = fs.statSync(filePath); // Used to get metadata about the file, need for filesize
+    const fileSize = stats.size;
+
+    if (lastPosition>= fileSize) {
+      resolve({lines: [], newPosition: lastPosition});
+      return;
+    }
+
+    const newLines = [];
+    let currentPosition = lastPosition;
+
+    const stream = createReadStream(filePath, {start: lastPosition, encoding: 'utf8'});
+    const readline = createInterface( {input: stream, crlfDelay: Infinity}) // Allows you to handle line endings in different OS, check https://nodejs.org/api/readline.html for more info
+
+    readline.on('line', line=> {
+      if (line.trim()) {
+        newLines.push(line.trim());
+      }
+
+      currentPosition+= Buffer.byteLength(line + '\n', 'utf-8');
+    });
+
+    readline.on('close', ()=> {
+      resolve({lines: newLines, newPosition: fileSize});
+    });
+
+    readline.on('error', error=> {
+      console.error(`Error reading ${filePath}:`, error);
+      resolve({ lines: [], newPosition: lastPosition });
+    });
+  });
+}
+
+let lineIndex = 0;
+
+async function sendSphericalData(socket) {
+  try {
+    // Read entire files once
+    const[lowData, medData, highData] = await Promise.all([
+      readNewLinesStream(sphericalPathLow, 0), // Always read from start
+      readNewLinesStream(sphericalPathMed, 0),
+      readNewLinesStream(sphericalPathHigh, 0)
+    ]);
+
+    // Check if we have data at current index
+    if (lineIndex < lowData.lines.length && 
+        lineIndex < medData.lines.length && 
+        lineIndex < highData.lines.length) {
+      
+      const vectors = [];
+      
+      // Parse current line from each file
+      const lowValues = lowData.lines[lineIndex].split(/\s+/).map(parseFloat);
+      const medValues = medData.lines[lineIndex].split(/\s+/).map(parseFloat);
+      const highValues = highData.lines[lineIndex].split(/\s+/).map(parseFloat);
+      
+      vectors.push([lowValues[0],lowValues[1],lowValues[2]], [lowValues[3],lowValues[4],lowValues[5]], [lowValues[6],lowValues[7],lowValues[8]]);
+      vectors.push([medValues[0],medValues[1],medValues[2]], [medValues[3],medValues[4],medValues[5]], [medValues[6],medValues[7],medValues[8]]);
+      vectors.push([highValues[0],highValues[1],highValues[2]], [highValues[3],highValues[4],highValues[5]], [highValues[6],highValues[7],highValues[8]]);
+      
+      const vectorMessage = {
+        type: 'vector',
+        data: vectors
+      };
+
+      socket.send(JSON.stringify(vectorMessage));
+      console.log('Sent vectors:', vectors);
+      
+      lineIndex++; // Move to next line
+    } 
+    
+    else {
+      // Reset to beginning when we reach the end
+      lineIndex = 0;
+      console.log('Restarting from beginning of files');
+    }
+  }
+
+  catch (error) {
+    console.error('Error reading spherical data:',error);
+  }
+}
+
+async function sendVibrationData(socket) {
+  try {
+    const[vibData, vibFpgaData] = await Promise.all([readNewLinesStream(vibrationPath, 0), readNewLinesStream(vibrationPathFPGA, 0)]);
+
+    if (lineIndex < vibData.lines.length && lineIndex<vibFpgaData.lines.length) {
+      const vibrationData = [];
+
+      const vibValues = vibData.lines[lineIndex].split(/\s+/).map(parseFloat);
+      const vibFPGAValues = vibFpgaData.lines[lineIndex].split(/\s+/).map(parseFloat);
+
+      vibrationData.push([vibValues[0], vibValues[1]]);
+      vibrationData.push([vibFPGAValues[0], vibFPGAValues[1]]);
+
+      const vibMessage = {
+        type: 'waveform',
+        data: vibrationData,
+      }
+
+      socket.send(JSON.stringify(vibMessage));
+      console.log('Sent vibration data', vibrationData);
+      
+      lineIndex++;
+    }
+
+    else {
+      lineIndex = 0;
+      console.log('Restarting vibration data from the beginning.');
+    }
+  }
+
+  catch (error) {
+    console.error('Error reading vibration data', error);
+  }
+}
+
+async function sendCommunicationData(socket) {
+  try {
+    const[lowData, medData, highData] = await Promise.all([
+
+      readNewLinesStream(communicationPathLow, 0),
+      readNewLinesStream(communicationPathMed, 0),
+      readNewLinesStream(communicationPathHigh, 0),
+    ]);
+
+    if (lineIndex < lowData.lines.length && lineIndex < medData.lines.length && lineIndex < highData.lines.length) {
+      const commData = [];
+
+      const lowValues = lowData.lines[lineIndex].split(/\s+/).map(parseFloat);
+      const medValues = medData.lines[lineIndex].split(/\s+/).map(parseFloat);
+      const highValues = highData.lines[lineIndex].split(/\s+/).map(parseFloat);
+
+      commData.push([lowValues[0], lowValues[1]]);
+      commData.push([medValues[0], medValues[1]]);
+      commData.push([highValues[0], highValues[1]]);
+
+      const commMessage = {
+        type: 'communication',
+        data: commData,
+      }
+
+      socket.send(JSON.stringify(commMessage));
+      console.log('Sent communication data:', commData);
+
+      lineIndex++;
+    }
+
+    else {
+      lineIndex = 0;
+      console.log('Restarting communication data to be read from start of file.');
+    }
+  }
+
+  catch (error) {
+    console.error('Error reading communication data:', error);
+  }
+}
 //const socket = new WebSocket(`ws://localhost:8080?role=sender&token=${key}`);
+const socket = new WebSocket(`wss://ws.rayyanparkar.com?role=sender&token=${key}`);
 
-function createWaveformData() {
-  const data = [];
-  
-  for (let i = 0; i<500; i++) {
-    const baseWave = Math.sin(i*0.3)*2;
-    const noise = (Math.random()-0.5)*0.5;
-    const highFrequency = Math.sin(i*1.5)*0.3;
-
-    const waveValue = baseWave + noise + highFrequency;
-    data.push(waveValue.toFixed(2));
-  }
-  
-  return data;
-}
-
-function createVectorData() {
-
-  const data = [];
-
-  for (let i = 0; i<500; i++) {
-    const time = i*0.1;
-    const vectors = [ //Creating three vectors
-      {
-        x: Math.cos(time * 0.8) * (0.6 + Math.sin(time * 0.3) * 0.3), 
-        y: Math.sin(time * 1.2) * (0.7 + Math.cos(time * 0.5) * 0.2), 
-        z: Math.sin(time * 0.9) * (0.5 + Math.sin(time * 0.7) * 0.4), 
-        color: '#ff4500',
-      },
-
-      {
-        x: Math.sin(time * 1.3) * (0.4 + Math.cos(time * 0.4) * 0.4), 
-        y: Math.cos(time * 0.9) * (0.8 + Math.sin(time * 0.6) * 0.3), 
-        z: Math.cos(time * 1.5) * (0.3 + Math.cos(time * 0.8) * 0.5), 
-        color: '#00ff00'
-      },
-
-      {
-        x: Math.cos(time * 1.7) * (0.5 + Math.sin(time * 0.9) * 0.4), 
-        y: Math.sin(time * 0.6) * (0.6 + Math.cos(time * 1.1) * 0.4), 
-        z: Math.sin(time * 2.1) * (0.4 + Math.sin(time * 0.5) * 0.3),
-        color: '#8a2be2'
-      }
-    ]; 
-    data.push(vectors);
-
-  }
-
-  return data;
-}
-
-function createCommunicationData() {
-  const data = [];
-  
-  for (let i = 0; i < 500; i++) {
-    const time = i * 0.02;
-    
-    // Create multiple patterns that cover the full range
-    const patterns = [
-      // Circular pattern
-      {
-        x: Math.cos(time * 3) * (0.8 + Math.sin(time * 0.5) * 0.6),
-        y: Math.sin(time * 3) * (0.8 + Math.cos(time * 0.7) * 0.6)
-      },
-      // Figure-8 pattern
-      {
-        x: Math.sin(time * 2) * 1.2,
-        y: Math.sin(time * 4) * 1.0
-      },
-      // Diagonal sweep
-      {
-        x: Math.sin(time * 1.5) * 1.3,
-        y: Math.cos(time * 2.5) * 1.2
-      },
-      // Random scatter in quadrants
-      {
-        x: (Math.random() - 0.5) * 2.8, // Full -1.4 to 1.4 range
-        y: (Math.random() - 0.5) * 2.8
-      }
-    ];
-    
-    // Pick a random pattern or combine them
-    const patternIndex = Math.floor(Math.random() * patterns.length);
-    const point = patterns[patternIndex];
-    
-    // Clamp to ensure we stay within bounds
-    point.x = Math.max(-1.4, Math.min(1.4, point.x));
-    point.y = Math.max(-1.4, Math.min(1.4, point.y));
-    
-    data.push([point]);
-  }
-  
-  return data;
-}
-
-const waveformData = createWaveformData();
-const vectorData = createVectorData();
-const communicationData = createCommunicationData();
-
-let waveformIndex = 0
-let vectorIndex = 0;
-let communicationIndex = 0;
-let currentType = 0; // 0 = waveform, 1 = vector, 2 = communication
-
-// Executes when the connection is successfully established.
-// Sends data every 16 ms to the server.
 socket.addEventListener('open', event => {
   console.log('WebSocket connection established!');
 
-  const interval = setInterval(()=> {
+  const interval = setInterval(async ()=> {
 
   if (socket.readyState!==WebSocket.OPEN) {
     console.log('Connection lost.');
@@ -125,54 +198,12 @@ socket.addEventListener('open', event => {
     return;
   }
 
-  if (waveformIndex < waveformData.length || vectorIndex < vectorData.length || communicationIndex<communicationData.length) {
-      
-      if (currentType === 0 && waveformIndex < waveformData.length) {
-      const waveformMessage = {
-        type: 'waveform',
-        data: waveformData[waveformIndex],
-      };
-      
-      socket.send(JSON.stringify(waveformMessage));
-      console.log(`Sent waveform: ${waveformData[waveformIndex]}`);
-      waveformIndex++;
-    }
+  await sendSphericalData(socket);
+  await sendVibrationData(socket);
+  await sendCommunicationData(socket);
 
-    else if (currentType === 1 && vectorIndex < vectorData.length) {
-      const vectorMessage = {
-        type: 'vector',
-        data: vectorData[vectorIndex],
-      };
-      
-      socket.send(JSON.stringify(vectorMessage));
-      console.log(`Sent vector: ${JSON.stringify(vectorData[vectorIndex])}`);
-      vectorIndex++;
-    }
-
-    else if (currentType === 2 && communicationIndex < communicationData.length) {
-      const communicationMessage = {
-        type: 'communication',
-        data: communicationData[communicationIndex],
-      };
-      
-      socket.send(JSON.stringify(communicationMessage));
-      console.log(`Sent communication: ${JSON.stringify(communicationData[communicationIndex])}`);
-      communicationIndex++;
-    }
-
-      // Toggle for next iteration (alternate between waveform and vector and communication)
-      currentType= (currentType+1)%3;
-      
-    } 
-    
-    else {
-      // All data sent, close connection
-      clearInterval(interval);
-      console.log("All Data Successfully Sent, closing connection.");
-      socket.close();
-    }
-
-  }, 0);
+  //Below is the delay
+  },20);
 });
 
 // Executes when the connection is closed, providing the close code and reason.

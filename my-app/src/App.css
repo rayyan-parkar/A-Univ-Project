@@ -1,17 +1,13 @@
-html, body {
-  min-height: 100vh;
+html, body, #root {
+  height: 100%;
   margin: 0;
   padding: 0;
   background-color: white;
-}
-
-#root {
-  min-height: 100vh;
   width: 100%;
 }
 
 .app-container {
-  min-height: 100vh;
+  height: 100%;
   width: 100%;
   background: white;
   font-family: Arial, sans-serif;
@@ -23,11 +19,22 @@ html, body {
 }
 
 .top-container {
-  height: auto;
-  width: 100%;
   display: flex;
+  align-items: center;
   justify-content: space-between;
+  padding: 0 20px; /* Add some horizontal padding */
+  width: 100%;
+  box-sizing: border-box;
+  flex-shrink: 0; /* Prevents the header from shrinking */
 }
+
+.top-container h1 {
+  margin: 0; /* Removes default margins that cause misalignment */
+  text-align: center;
+  flex-grow: 1; /* Allows the title to take up available space */
+  color: #000000;
+}
+
 
 .logo {
   width: 160px;
@@ -54,18 +61,11 @@ html, body {
   width: fit-content;
 }
 
-.top-container h1 {
-  color:black;
-  margin: 0;
-  text-align: center;
-  word-wrap: break-word;
-  width: 80%;
-}
-
 .body-container {
   display: flex;
   flex-direction: column;
   width: 100%;
+  flex: 1;
 }
 
 .body-container h2 {
@@ -76,6 +76,7 @@ html, body {
   margin: 0 auto;
   margin-top: 10px;
 }
+
 .status {
   display: flex;
   align-items: center;
@@ -114,12 +115,20 @@ html, body {
 
 .grid-container {
   display: grid;
-  grid-template-rows: 1fr 1fr;
-  height: auto;
+  grid-template-columns: 1fr 1fr; /* Create two equal columns */
+  gap: 20px; /* Add space between the columns */
+  padding: 10px;
   width: 100%;
   box-sizing: border-box;
-  overflow: hidden;
   flex: 1;
+}
+
+.left-column, .right-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* Center items horizontally in the column */
+  justify-content: flex-start; /* Distribute space vertically */
+  gap: 20px;
 }
 
 .video-container img {
@@ -131,6 +140,7 @@ html, body {
 .spherical-container {
   display: flex;
   flex-direction: row;
+  gap: 35px;
 }
 
 .vibration-container {
@@ -160,23 +170,10 @@ html, body {
   margin-right: 10px;
 }
 
-.top {
-  display: flex;
-  flex-direction: row;
-  justify-content: space-evenly;
-}
-
-.bottom {
-  display: flex;
-  flex-direction: row;
-  justify-content: space-evenly;
-  margin-top: 10px;
-}
-
 .sop-text {
   position: absolute;
   left: -60px;
-  top: 50%;
+  top: 63%;
   transform: translateY(-50%) rotate(-90deg);
   font-size: 24px;
   color: #000000;

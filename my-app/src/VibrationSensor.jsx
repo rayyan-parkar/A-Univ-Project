@@ -10,7 +10,7 @@ ChartJS.register(
     Title,
 );
 
-function VibrationChart({latestData}) {
+function VibrationChart({latestData, title}) {
     const [signalData, setSignalData] = useState([]);
 
     //Generate an array from 0-100 to store the x-axis
@@ -83,9 +83,7 @@ function VibrationChart({latestData}) {
         maintainAspectRatio: false,
         plugins: {
             title: {
-                display: true,
-                text: 'Vibration Signal',
-                color: '#000000',
+                display: false,
             },
         },
 
@@ -135,6 +133,7 @@ function VibrationChart({latestData}) {
     };
     return (
         <div className='vibration-chart'>
+            <h2>{title}</h2>
             <Line data= {chartData} options = {chartOptions} />
         </div>
     );

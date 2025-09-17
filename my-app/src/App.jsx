@@ -218,33 +218,35 @@ function App() {
         </div>
 
         <div className="grid-container">
-          <div className="top">
-          <div className="video-container">
-            <img src={videoUnavailable} alt="ERROR"/>
-          </div>
-          <div style={{ position: 'relative' }}>
-            <div className="sop-text">SOP</div>
-            <div className="spherical-container">
-              <SphericalGraph vectorData={vectorData1} title="Low Precision" enableCameraControls={false} enableRotation={true}/>
-              <SphericalGraph vectorData={vectorData2} title="Medium Precision" enableCameraControls={false} enableRotation={true}/>
-              <SphericalGraph vectorData={vectorData3} title="High Precision" enableCameraControls={false} enableRotation={true}/>
+          {/* --- Left Column --- */}
+          <div className="left-column">
+            <div className="video-container">
+              <img src={videoUnavailable} alt="ERROR"/>
+            </div>
+            <div className="vibration-container">
+              <VibrationSensor latestData={vibrationValue} title='Vibration Sensor'/>
+              <VibrationSensor latestData={vibrationValue} title='FPGA Sensing'/>
             </div>
           </div>
-          </div>
-          <div className="bottom">
 
-          <div className="vibration-container">
-            <VibrationSensor latestData={vibrationValue}/>
-            <VibrationSensor latestData={vibrationValue}/>
-          </div>
-          <div>
-          <h2>Communication Data</h2>
-          <div className="comms-container">
-            <CommunicationData latestData={communicationData}/>
-            <CommunicationData latestData={communicationData}/>
-            <CommunicationData latestData={communicationData}/>
-          </div>
-          </div>
+          {/* --- Right Column --- */}
+          <div className="right-column">
+            <div style={{ position: 'relative' }}>
+              <div className="sop-text">SOP</div>
+              <div className="spherical-container">
+                <SphericalGraph vectorData={vectorData1} title="Low Precision" enableCameraControls={false} enableRotation={true}/>
+                <SphericalGraph vectorData={vectorData2} title="Medium Precision" enableCameraControls={false} enableRotation={true}/>
+                <SphericalGraph vectorData={vectorData3} title="High Precision" enableCameraControls={false} enableRotation={true}/>
+              </div>
+            </div>
+            <div>
+              <h2>Communication Data</h2>
+              <div className="comms-container">
+                <CommunicationData latestData={communicationData}/>
+                <CommunicationData latestData={communicationData}/>
+                <CommunicationData latestData={communicationData}/>
+              </div>
+            </div>
           </div>
         </div>
         

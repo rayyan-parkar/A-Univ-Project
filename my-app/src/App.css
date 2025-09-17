@@ -156,6 +156,8 @@ html, body {
 .comms-graph {
   height: 275px;
   width: 300px;
+  border: 1px solid #000000;
+  margin-right: 10px;
 }
 
 .top {
@@ -169,4 +171,13 @@ html, body {
   flex-direction: row;
   justify-content: space-evenly;
   margin-top: 10px;
+}
+
+.sop-text {
+  position: absolute;
+  left: -60px;
+  top: 50%;
+  transform: translateY(-50%) rotate(-90deg);
+  font-size: 24px;
+  color: #000000;
 }

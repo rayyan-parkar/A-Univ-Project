@@ -26,8 +26,8 @@ function App() {
   useEffect(()=> {
   const connectWebSocket = () => {
     const key = import.meta.env.VITE_RECEIVER_KEY;
-    //const socket = new WebSocket(`ws://localhost:8080?role=receiver&token=${key}`);
-    const socket = new WebSocket(`wss://ws.rayyanparkar.com?role=receiver&token=${key}`);
+    const socket = new WebSocket(`ws://localhost:8080?role=receiver&token=${key}`);
+    //const socket = new WebSocket(`wss://ws.REDACTED.com?role=receiver&token=${key}`);
     socketRef.current = socket;
 
     socket.onopen = ()=> {
@@ -222,10 +222,13 @@ function App() {
           <div className="video-container">
             <img src={videoUnavailable} alt="ERROR"/>
           </div>
-          <div className="spherical-container">
-            <SphericalGraph vectorData={vectorData1} enableCameraControls={false} enableRotation={true}/>
-            <SphericalGraph vectorData={vectorData2} enableCameraControls={false} enableRotation={true}/>
-            <SphericalGraph vectorData={vectorData3} enableCameraControls={false} enableRotation={true}/>
+          <div style={{ position: 'relative' }}>
+            <div className="sop-text">SOP</div>
+            <div className="spherical-container">
+              <SphericalGraph vectorData={vectorData1} title="Low Precision" enableCameraControls={false} enableRotation={true}/>
+              <SphericalGraph vectorData={vectorData2} title="Medium Precision" enableCameraControls={false} enableRotation={true}/>
+              <SphericalGraph vectorData={vectorData3} title="High Precision" enableCameraControls={false} enableRotation={true}/>
+            </div>
           </div>
           </div>
           <div className="bottom">

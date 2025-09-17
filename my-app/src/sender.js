@@ -1,7 +1,6 @@
 import { WebSocket } from 'ws';
 import dotenv from 'dotenv';
 import fs, { createReadStream } from 'fs';
-import path from 'path';
 import { createInterface } from 'readline';
 // Path and FS required to handle async file reading and easier path management (Don't need to worry about Unix systems breaking.)
 // dotenv to read env variables and ws for websocket connections.
@@ -184,8 +183,8 @@ async function sendCommunicationData(socket) {
     console.error('Error reading communication data:', error);
   }
 }
-//const socket = new WebSocket(`ws://localhost:8080?role=sender&token=${key}`);
-const socket = new WebSocket(`wss://ws.rayyanparkar.com?role=sender&token=${key}`);
+const socket = new WebSocket(`ws://localhost:8080?role=sender&token=${key}`);
+//const socket = new WebSocket(`wss://ws.REDACTED.com?role=sender&token=${key}`);
 
 socket.addEventListener('open', event => {
   console.log('WebSocket connection established!');

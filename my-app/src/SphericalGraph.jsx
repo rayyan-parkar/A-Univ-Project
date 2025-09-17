@@ -62,6 +62,7 @@ function SphericalGraph({
 
 return (
     <div className="spherical-graph">
+    <h2>{title}</h2>
     <Canvas camera={{ position: [2.5, 2.5, 2.5], fov: 50 }}>
       
       <WireframeSphere enableRotation={enableRotation} />

@@ -78,13 +78,22 @@ return (
 
       {(() => {
         const vectorElements = [];
+        const sphereRadius = 1.25; // Define your desired radius here
+
         for (let i = 0; i < vectors.length; i++) {
           const vector = vectors[i];
+          
+          // Create a THREE.Vector3 from the raw data
+          const originalVector = new THREE.Vector3(vector.x, vector.y, vector.z);
+          
+          // Normalize it (make its length 1) and then scale it to the sphere's radius
+          const scaledVector = originalVector.normalize().multiplyScalar(sphereRadius);
+
           vectorElements.push(
             <Vector
               key={i}
               start={new THREE.Vector3(0, 0, 0)}
-              end={new THREE.Vector3(vector.x, vector.y, vector.z)}
+              end={scaledVector} // Use the new, correctly scaled vector
               color={vector.color || '#ff6b6b'}
             />
           );

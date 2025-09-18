@@ -1,11 +1,25 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo, useRef, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 
 // Vector component that renders a line with an endpoint with a sphere at that point
 function Vector({ start, end, color }) {
-  const points = [start, end];
-  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+  const geometryRef = useRef();
+  const geometry = useMemo(() => {
+    const points = [start, end];
+    const geom = new THREE.BufferGeometry().setFromPoints(points);
+    return geom;
+  }, [start.x, start.y, start.z, end.x, end.y, end.z]);
+
+  useEffect(() => {
+    geometryRef.current = geometry;
+    return () => {
+      // Dispose of geometry when component unmounts
+      if (geometryRef.current) {
+        geometryRef.current.dispose();
+      }
+    };
+  }, [geometry]);
 
   return (
     <group>
@@ -47,7 +61,7 @@ const SphericalGraph = React.memo(function SphericalGraph({vectorData, title}) {
 
     return vectors.map((vector, i) => {
       const originalVector = new THREE.Vector3(vector.x, vector.y, vector.z);
-      const scaledVector = originalVector.normalize().multiplyScalar(sphereRadius);
+      const scaledVector = originalVector.normalize().multiplyScalar(0.97*sphereRadius);
       return (
         <Vector
           key={i}

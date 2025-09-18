@@ -1,4 +1,4 @@
-import {useState, useEffect} from 'react';
+import React, {useState, useEffect, useMemo} from 'react';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title} from 'chart.js';
 import { Line } from 'react-chartjs-2';
 
@@ -10,99 +10,84 @@ ChartJS.register(
     Title,
 );
 
-function VibrationChart({latestData, title}) {
-    const [signalData, setSignalData] = useState([]);
+const VibrationChart = React.memo(function VibrationChart({latestData, title}) {
+    const [signalData, setSignalData] = useState(() => new Array(100).fill(0));
 
-    //Generate an array from 0-100 to store the x-axis
-    const time = Array.from({length: 101}, (_, i)=> i);
+    // Memoise time array
+    const time = useMemo(() => Array.from({length: 100}, (_, i) => i), []);
 
-    useEffect(()=> {
-        if (latestData!==null && latestData!==undefined) {
-            setSignalData(prev=>{
-                const newData = [...prev, parseFloat(latestData)];
-                
-                // Always keep exactly 100 points (sliding window)
-                if (newData.length > 100) {
-                    return newData.slice(-100);
-                }
-                
-                // Fill remaining slots with 0 if we don't have 100 points yet
-                while (newData.length < 100) {
-                    newData.unshift(0); // Add zeros at the beginning
-                }
-                
+    useEffect(() => {
+        if (latestData != null) {
+            setSignalData(prev => {
+                const newData = [...prev];
+                newData.shift(); // Remove first element
+                newData.push(parseFloat(latestData)); // Add new element at end
                 return newData;
             });
         }
     }, [latestData]);
 
-    //Calculates Y-Axis Range
-    const getRange = ()=> {
-
-        //Default range of Y-Axis
-        if (signalData.length===0) {
-            return {min:-1, max:1};
+    // Memoise Y-axis range calculation
+    const yRange = useMemo(() => {
+        const validData = signalData.filter(val => val != null && !isNaN(val));
+        
+        if (validData.length === 0) {
+            return { min: -1, max: 1 };
         }
         
-        // Filter out undefined and null values to ensure a smooth graph
-        const validData = signalData.filter( val => val !== null && val!==undefined);
-        let min = validData[0];
-        let max = validData[0];
+        const min = Math.min(...validData);
+        const max = Math.max(...validData);
+        
+        // Added so that flat lines are visible, don't show otherwise
+        const padding = Math.abs(max - min) * 0.1 || 0.1;
+        return { 
+            min: min - padding, 
+            max: max + padding 
+        };
+    }, [signalData]);
 
-        for (let i = 1; i<validData.length; i++) {
-            if (validData[i]>max) {
-                max = validData[i];
-            }  
-
-            if (validData[i]<min) {
-                min = validData[i];
-            }
-        }
-
-        return {min: min, max: max};
-    };
-
-    const yRange = getRange();
-
-    const chartData = {
+    const chartData = useMemo(() => ({
         labels: time,
-        datasets: [
-            {
-                label: 'Vibration Signal',
-                data: signalData,
-                fill: false,
-                borderColor: '#0066ff',
-                borderWidth: 2,
-                pointRadius: 0,
-            }
-        ],
-    };
+        datasets: [{
+            label: 'Vibration Signal',
+            data: signalData,
+            fill: false,
+            borderColor: '#0066ff',
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0, // Explicit no smoothing for performance
+        }]
+    }), [signalData, time]);
 
-    const chartOptions = {
+    const chartOptions = useMemo(() => ({
         responsive: true,
         maintainAspectRatio: false,
-        plugins: {
-            title: {
-                display: false,
-            },
+        interaction: {
+            intersect: false,
+            mode: 'index',
         },
-
+        plugins: {
+            title: { display: false },
+            legend: { display: false },
+        },
         scales: {
             x: {
                 type: 'linear',
                 min: 0,
-                max: 100,
+                max: 99,
                 title: {
                     display: true,
                     text: 'Time',
-                    color: '#000000', 
+                    color: '#000000',
                 },
                 ticks: {
                     stepSize: 10,
                     color: '#000000',
                 },
+                grid: {
+                    display: true,
+                },
             },
-
             y: {
                 min: yRange.min,
                 max: yRange.max,
@@ -113,30 +98,27 @@ function VibrationChart({latestData, title}) {
                 },
                 ticks: {
                     color: '#000000',
-                    callback: function(value) {
-                        return value.toFixed(1);
-                    }
+                    maxTicksLimit: 6, // Ticks limited for performance
+                    callback: (value) => value.toFixed(1),
                 },
                 grid: {
                     zeroLineColor: '#000000',
-                    zerLineWidth: 2,
+                    zeroLineWidth: 2,
                 }
             },
         },
-
-        animation: {
-            duration: 0,
-            loop: false,
-            delay: 0,
-            easing: 'easeInOutQuart',
+        animation: false,
+        elements: {
+            point: { radius: 0 }, // Ensure no points are drawn
+            line: { borderWidth: 2 }
         }
-    };
+    }), [yRange, time]);
     return (
         <div className='vibration-chart'>
             <h2>{title}</h2>
-            <Line data= {chartData} options = {chartOptions} />
+            <Line data={chartData} options={chartOptions} />
         </div>
     );
-}
+});
 
 export default VibrationChart;

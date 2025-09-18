@@ -154,13 +154,15 @@ html, body, #root {
 }
 
 .spherical-graph {
+  display: flex;
+  flex-direction: column;
   height: 275px;
   width: 275px;
 }
 
 .vibration-chart {
-  height: 335px;
-  width: 335px;
+  height: 350px;
+  width: 350px;
 }
 
 .comms-graph {
@@ -177,4 +179,8 @@ html, body, #root {
   transform: translateY(-50%) rotate(-90deg);
   font-size: 24px;
   color: #000000;
+}
+
+.spherical-graph > div {
+  flex: 1;
 }

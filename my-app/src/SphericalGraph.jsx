@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 
-// Vector component that renders a line with an endpoint
+// Vector component that renders a line with an endpoint with a sphere at that point
 function Vector({ start, end, color }) {
   const points = [start, end];
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
@@ -11,7 +10,7 @@ function Vector({ start, end, color }) {
   return (
     <group>
       <line geometry={geometry}>
-        <lineBasicMaterial color={color} linewidth={4} />
+        <lineBasicMaterial color={color}/>
       </line>
       <mesh position={[end.x, end.y, end.z]}>
         <sphereGeometry args={[0.06, 12, 12]} />
@@ -21,12 +20,12 @@ function Vector({ start, end, color }) {
   );
 }
 
-// Wireframe sphere component with optional rotation
-function WireframeSphere({ enableRotation = false }) {
+// Wireframe sphere that rotates around its own axis
+function WireframeSphere({ }) {
   const meshRef = useRef();
 
-  useFrame((state, delta) => {
-    if (enableRotation && meshRef.current) {
+  useFrame((_, delta) => {
+    if (meshRef.current) {
       meshRef.current.rotation.y += delta * 0.2; // Rotate around Y axis
     }
   });
@@ -40,69 +39,41 @@ function WireframeSphere({ enableRotation = false }) {
 }
 
 // Main SphericalGraph component
-function SphericalGraph({ 
-  vectorData = [], 
-  title = "Low Precision",
-  enableRotation = false,
-  enableCameraControls = true 
-}) {
-  const [vectors, setVectors] = useState([]);
+const SphericalGraph = React.memo(function SphericalGraph({vectorData, title}) { 
+  
+  const vectorElements = useMemo(() => {
+    const sphereRadius = 1.25;
+    const vectors = vectorData || [];
 
-  // Update vectors when data is received
-  useEffect(() => {
-    if (vectorData && vectorData.length > 0) {
-      setVectors(vectorData);
-    } 
-    
-    else {
-      setVectors([]); // Clear vectors if no data
-    }
-  }, 
-  [vectorData]);
+    return vectors.map((vector, i) => {
+      const originalVector = new THREE.Vector3(vector.x, vector.y, vector.z);
+      const scaledVector = originalVector.normalize().multiplyScalar(sphereRadius);
+      return (
+        <Vector
+          key={i}
+          start={new THREE.Vector3(0, 0, 0)}
+          end={scaledVector}
+          color={vector.color || '#ff6b6b'}
+        />
+      );
+    });
+  }, [vectorData]);
 
+// Returns the final spherical graph HTML component
 return (
     <div className="spherical-graph">
     <h2>{title}</h2>
-    <Canvas camera={{ position: [2.5, 2.5, 2.5], fov: 50 }}>
-      
-      <WireframeSphere enableRotation={enableRotation} />
-      
-      {enableCameraControls && (
-        <OrbitControls 
-          enablePan={true}
-          enableZoom={true}
-          enableRotate={true}
-          autoRotate={true}
-        />
-      )}
-
-      {(() => {
-        const vectorElements = [];
-        const sphereRadius = 1.25; // Define your desired radius here
-
-        for (let i = 0; i < vectors.length; i++) {
-          const vector = vectors[i];
-          
-          // Create a THREE.Vector3 from the raw data
-          const originalVector = new THREE.Vector3(vector.x, vector.y, vector.z);
-          
-          // Normalize it (make its length 1) and then scale it to the sphere's radius
-          const scaledVector = originalVector.normalize().multiplyScalar(sphereRadius);
-
-          vectorElements.push(
-            <Vector
-              key={i}
-              start={new THREE.Vector3(0, 0, 0)}
-              end={scaledVector} // Use the new, correctly scaled vector
-              color={vector.color || '#ff6b6b'}
-            />
-          );
-        }
-        return vectorElements;
-      })()}
+    <Canvas 
+      camera={{ position: [2.5, 2.5, 2.5], fov: 40 }}
+      style={{ width: '275px', height: '229px' }}
+      dpr={1}
+      resize={{ scroll: false, debounce: { scroll: 50, resize: 0 } }}
+    >
+      <WireframeSphere/>
+      {vectorElements}
     </Canvas>
   </div>
 );
-}
+});
 
 export default SphericalGraph;

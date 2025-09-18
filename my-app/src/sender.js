@@ -112,13 +112,11 @@ async function sendVibrationData(socket) {
     const[vibData, vibFpgaData] = await Promise.all([readNewLinesStream(vibrationPath, 0), readNewLinesStream(vibrationPathFPGA, 0)]);
 
     if (lineIndex < vibData.lines.length && lineIndex<vibFpgaData.lines.length) {
-      const vibrationData = [];
 
       const vibValues = vibData.lines[lineIndex].split(/\s+/).map(parseFloat);
       const vibFPGAValues = vibFpgaData.lines[lineIndex].split(/\s+/).map(parseFloat);
 
-      vibrationData.push([vibValues[0], vibValues[1]]);
-      vibrationData.push([vibFPGAValues[0], vibFPGAValues[1]]);
+      const vibrationData = [vibValues[0], vibFPGAValues[0]];
 
       const vibMessage = {
         type: 'waveform',
@@ -202,7 +200,7 @@ socket.addEventListener('open', event => {
   await sendCommunicationData(socket);
 
   //Below is the delay
-  },20);
+  },16);
 });
 
 // Executes when the connection is closed, providing the close code and reason.

@@ -11,6 +11,7 @@ function App() {
 
   const [connectionStatus, setConnectionStatus] = useState('Disconnected');
   const [vibrationValue, setVibrationValue] = useState(null);
+  const [vibrationFPGA, setVibrationFPGA] = useState(null);
   const [vectorData1, setVectorData1] = useState([]);
   const [vectorData2, setVectorData2] = useState([]);
   const [vectorData3, setVectorData3] = useState([]);
@@ -53,9 +54,10 @@ function App() {
         const parsedMessage = JSON.parse(message);
 
         if (parsedMessage.type === 'waveform') {
-          const parsedValue = parseFloat(parsedMessage.data);
-          if (!isNaN(parsedValue)) {
-            setVibrationValue(parsedValue);
+
+          if (parsedMessage.data.length===2) {
+            setVibrationValue(parseFloat(parsedMessage.data[0]));
+            setVibrationFPGA(parseFloat(parsedMessage.data[1]));
           }
         }
         
@@ -95,9 +97,9 @@ function App() {
         });
     }
     
-    setVectorData1(graph1Vectors);   // Vectors 0, 1, 2
-    setVectorData2(graph2Vectors);   // Vectors 3, 4, 5
-    setVectorData3(graph3Vectors);   // Vectors 6, 7, 8
+    setVectorData1(graph1Vectors);
+    setVectorData2(graph2Vectors);
+    setVectorData3(graph3Vectors);
     } 
 
         else if (parsedMessage.type== 'communication') {
@@ -225,7 +227,7 @@ function App() {
             </div>
             <div className="vibration-container">
               <VibrationSensor latestData={vibrationValue} title='Vibration Sensor'/>
-              <VibrationSensor latestData={vibrationValue} title='FPGA Sensing'/>
+              <VibrationSensor latestData={vibrationFPGA} title='FPGA Sensing'/>
             </div>
           </div>
 
@@ -234,9 +236,9 @@ function App() {
             <div style={{ position: 'relative' }}>
               <div className="sop-text">SOP</div>
               <div className="spherical-container">
-                <SphericalGraph vectorData={vectorData1} title="Low Precision" enableCameraControls={false} enableRotation={true}/>
-                <SphericalGraph vectorData={vectorData2} title="Medium Precision" enableCameraControls={false} enableRotation={true}/>
-                <SphericalGraph vectorData={vectorData3} title="High Precision" enableCameraControls={false} enableRotation={true}/>
+                <SphericalGraph vectorData={vectorData1} title="Low Precision"/>
+                <SphericalGraph vectorData={vectorData2} title="Medium Precision"/>
+                <SphericalGraph vectorData={vectorData3} title="High Precision"/>
               </div>
             </div>
             <div>

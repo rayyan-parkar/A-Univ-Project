@@ -181,8 +181,8 @@ async function sendCommunicationData(socket) {
     console.error('Error reading communication data:', error);
   }
 }
-const socket = new WebSocket(`ws://localhost:8080?role=sender&token=${key}`);
-//const socket = new WebSocket(`wss://ws.REDACTED.com?role=sender&token=${key}`);
+//const socket = new WebSocket(`ws://localhost:8080?role=sender&token=${key}`);
+const socket = new WebSocket(`wss://ws.rayyanparkar.com?role=sender&token=${key}`);
 
 socket.addEventListener('open', event => {
   console.log('WebSocket connection established!');

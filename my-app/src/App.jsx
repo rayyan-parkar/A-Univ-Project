@@ -27,8 +27,8 @@ function App() {
   useEffect(()=> {
   const connectWebSocket = () => {
     const key = import.meta.env.VITE_RECEIVER_KEY;
-    const socket = new WebSocket(`ws://localhost:8080?role=receiver&token=${key}`);
-    //const socket = new WebSocket(`wss://ws.REDACTED.com?role=receiver&token=${key}`);
+    //const socket = new WebSocket(`ws://localhost:8080?role=receiver&token=${key}`);
+    const socket = new WebSocket(`wss://ws.rayyanparkar.com?role=receiver&token=${key}`);
     socketRef.current = socket;
 
     socket.onopen = ()=> {

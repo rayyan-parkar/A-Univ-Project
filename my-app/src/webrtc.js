@@ -1,114 +1,62 @@
 import express from 'express';
-import wrtc from '@roamhq/wrtc';
+import { spawn } from 'child_process';
 
-const { RTCPeerConnection } = wrtc;
-
-// Create New Express App (web-server object)
 const app = express();
 
-// Parse incoming HTTP requests as plain text for SDP
-app.use(express.text( {type: 'application/sdp'} ));
+let rtmpProcess = null;
 
-// Parse JSON as Object
-app.use(express.json());
+// Start simple RTMP server with FFMPEG
+function startRTMPServer() {
+    console.log('Starting RTMP server...');
 
-// Create publisher (source) and list of viewers
+    rtmpProcess = spawn('ffmpeg', [
+        '-f', 'flv',
+        '-listen', '1',
+        '-i', 'rtmp://0.0.0.0:1935/stream',
+        '-c', 'copy',
+        '-f', 'null',  // Fixed: was missing '-'
+        '-'
+    ]);
 
-let publisherConnection = null;
-const viewers = [];
+    rtmpProcess.stdout.on('data', (data)=> {
+        console.log('FFmpeg stdout:', data.toString());  // Fixed typo
+    });
 
-app.post('/whip', async (req, res) => {
-    try {
-        publisherConnection = new RTCPeerConnection({
-            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-            encodedInsertableStreams: false,
-            forceEncodedAudioInsertableStreams: false,
-            forceEncodedVideoInsertableStreams: false,
-        });
+    rtmpProcess.stderr.on('data', (data)=>{
+        console.log('FFmpeg error:', data.toString());
+    });
 
-        // Add some logging to see what OBS is offering
-        console.log('--- Received Offer from OBS ---');
-        console.log(req.body);
-        console.log('---------------------------------');
+    rtmpProcess.on('close', (code)=> {
+        console.log(`RTMP server closed with code ${code}`);
+    });
 
-        // Attach all informational event handlers first
-        publisherConnection.onicecandidate = (event) => {
-            if (event.candidate) {
-                console.log('ICE candidate generated:', event.candidate.candidate);
-            } else {
-                console.log('ICE gathering complete');
-            }
-        };
-        publisherConnection.onicegatheringstatechange = () => {
-            console.log('ICE gathering state:', publisherConnection.iceGatheringState);
-        };
-        publisherConnection.oniceconnectionstatechange = () => {
-            console.log('ICE connection state:', publisherConnection.iceConnectionState);
-        };
-        publisherConnection.onconnectionstatechange = () => {
-            console.log('Publisher connection state:', publisherConnection.connectionState);
-        };
+    rtmpProcess.on('error', (error)=> {
+        console.error('RTMP server error:',error);
+    });
 
-        // STEP 1: Set the remote description from OBS first.
-        // This allows the peer connection to create the necessary transceivers.
-        await publisherConnection.setRemoteDescription({
-            type: 'offer',
-            sdp: req.body,
-        });
+    console.log('RTMP server listening on rtmp://localhost:1935/stream');
+}
 
-        // STEP 2: NOW attach the ontrack handler.
-        // This ensures it's attached to the transceivers created by the offer.
-        publisherConnection.ontrack = (trackEvent) => {
-            console.log('Received track from OBS:', trackEvent.track.kind);
-
-            // Forward to all viewers
-            viewers.forEach(viewer => {
-                if (viewer.connectionState === 'connected') {
-                    viewer.addTrack(trackEvent.track, trackEvent.streams[0]);
-                }
-            });
-        };
-
-        console.log('Creating answer...');
-        const answer = await publisherConnection.createAnswer();
-        
-        // Add logging to see the answer we are generating
-        console.log('--- Generated Answer for OBS ---');
-        console.log(answer.sdp);
-        console.log('----------------------------------');
-
-        console.log('Setting local description...');
-        await publisherConnection.setLocalDescription(answer);
-
-        if (publisherConnection.iceGatheringState !== 'complete') {
-            await new Promise(resolve => {
-                publisherConnection.addEventListener('icegatheringstatechange', () => {
-                    if (publisherConnection.iceGatheringState === 'complete') {
-                        resolve();
-                    }
-                });
-            });
-        }
-
-        // Send answer back to OBS
-        res.setHeader('Content-Type', 'application/sdp');
-        res.send(publisherConnection.localDescription.sdp); // Send the final description
-    }
-    catch (error) {
-        console.error('WHIP error:', error);
-        res.status(500).send('Internal Server Error')
-    }
-});
-
-app.get('/whip', async(req,res)=> {
+app.get('/status', (req,res)=> {
     res.json({
-        hasPublisher: !!publisherConnection,
-        publisherState: publisherConnection?.connectionState || 'none',
-        viewerCount: viewers.length,
+        rtmpServerRunning: !!rtmpProcess,  // Fixed: convert to boolean
+        message: 'RTMP server is ' + (rtmpProcess ? 'running' : 'stopped')  // Fixed: proper check
     })
 });
 
-// Listen on specified port
-app.listen(1935, ()=> {
-    console.log('WHIP Server running on http://localhost:1935/whip')
+startRTMPServer();
+
+app.listen(3000, ()=> {  // Fixed: use different port (3000) since FFmpeg uses 1935
+    console.log('Status server running on http://localhost:3000/status');
+    console.log('RTMP endpoint: rtmp://localhost:1935/stream');
+});
+
+process.on('SIGTERM', ()=> {
+    if (rtmpProcess) rtmpProcess.kill();
+    process.exit(0);
+});
+
+process.on('SIGINT', ()=> {
+    if (rtmpProcess) rtmpProcess.kill();
+    process.exit(0);
 });

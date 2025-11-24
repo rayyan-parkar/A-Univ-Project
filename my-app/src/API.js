@@ -1,18 +1,21 @@
 import { WebSocketServer } from 'ws';
 import dotenv from 'dotenv';
 import { parse } from 'url';
-
+ 
+// Configure environment variables
 dotenv.config();
 
+// Start a new websocket server at port 8080 (Standard for Websockets)
 const wss = new WebSocketServer({port: 8080})
 console.log('Server started!');
 
+// Get the Sender Key and Receiver Key to ensure token validation
 const validTokens = {
     'sender': process.env.VITE_SENDER_KEY,
     'receiver': process.env.VITE_RECEIVER_KEY
 };
 
-//Map of clients
+//Create a new map to store clients
 const clients = new Map();
 let totalReceivers = 0;
 
@@ -23,6 +26,7 @@ wss.on('connection', function connection(ws, req) {
         ws.close(1008, 'Violated message rules.')
     });
 
+    // Parse string connecting to the server to find client role and the provided key
     const {query} = parse(req.url, true);
     const clientRole = query.role;
 
@@ -33,15 +37,18 @@ wss.on('connection', function connection(ws, req) {
         return;
     }
 
+    // If 2 clients are already connected, refuse all further connections (Can be increased or disabled as required.)
     if (totalReceivers===2 && query.role==='receiver') {
         console.log('Max receivers present, connection blocked!');
         ws.close(1013, 'Receiver limit reached!');
         return
     }
 
+    // Update Receiver count
     if (query.role==='receiver') {
         totalReceivers+=1;
     }
+
     console.log('Current Receivers:', totalReceivers);
 
     //If tokens are valid, allow client to connect and add to map.
@@ -54,7 +61,7 @@ wss.on('connection', function connection(ws, req) {
         const senderInfo = clients.get(ws);
         console.log('received: %s', data);
 
-        //Sends message to sender.
+        //Sends messages received from sender to receiver
         if (senderInfo.role==='sender') {
             clients.forEach((clientInfo, clientSocket)=> {
                 if (clientInfo.role==='receiver' && clientSocket.readyState === 1) {

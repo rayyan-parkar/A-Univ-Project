@@ -9,21 +9,22 @@ let rtmpProcess = null;
 function startRTMPServer() {
     console.log('Starting RTMP server...');
 
+    //Spawn an FFmpeg process
     rtmpProcess = spawn('ffmpeg', [
-        '-f', 'flv',
-        '-listen', '1',
-        '-i', 'rtmp://0.0.0.0:1935/stream',
-        '-c', 'copy',
-        '-f', 'null',  // Fixed: was missing '-'
-        '-'
+        '-f', 'flv', // Tell FFmpeg that input format is flash video (flv).
+        '-listen', '1', // Puts FFmpeg in server mode
+        '-i', 'rtmp://0.0.0.0:1935/stream', // Input source
+        '-c', 'copy', // Copy codec mode, is the fastest option
+        '-f', 'null', // Output format is null.
+        '-' // Output to stdout, but null here for testing
     ]);
 
     rtmpProcess.stdout.on('data', (data)=> {
-        console.log('FFmpeg stdout:', data.toString());  // Fixed typo
+        console.log('FFmpeg stdout:', data.toString());
     });
 
     rtmpProcess.stderr.on('data', (data)=>{
-        console.log('FFmpeg error:', data.toString());
+        console.log(data.toString());
     });
 
     rtmpProcess.on('close', (code)=> {
@@ -39,8 +40,8 @@ function startRTMPServer() {
 
 app.get('/status', (req,res)=> {
     res.json({
-        rtmpServerRunning: !!rtmpProcess,  // Fixed: convert to boolean
-        message: 'RTMP server is ' + (rtmpProcess ? 'running' : 'stopped')  // Fixed: proper check
+        rtmpServerRunning: !!rtmpProcess,
+        message: 'RTMP server is ' + (rtmpProcess ? 'running' : 'stopped')
     })
 });
 

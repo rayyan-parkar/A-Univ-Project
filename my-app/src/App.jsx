@@ -9,6 +9,7 @@ import './App.css';
 
 function App() {
 
+  // Initialises all const variables for data receoption and status indication 
   const [connectionStatus, setConnectionStatus] = useState('Disconnected');
   const [vibrationValue, setVibrationValue] = useState(null);
   const [vibrationFPGA, setVibrationFPGA] = useState(null);

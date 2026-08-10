@@ -14,18 +14,18 @@ import SetupScreen from './components/SetupScreen';
 function App() {
   const session = useExperimentSession();
   const { socketRef, connectionStatus, sessionState, role, generatedPassword, authError, configureSession, authenticate, senderConnected, graphData } = session;
-  
+
   const webrtc = useWebRTC(socketRef, role);
 
   const videoRef = useRef(null);
 
   useEffect(() => {
     if (videoRef.current) {
-        if (role === 'host' && webrtc.localStream) {
-            videoRef.current.srcObject = webrtc.localStream;
-        } else if (role === 'viewer' && webrtc.remoteStream) {
-            videoRef.current.srcObject = webrtc.remoteStream;
-        }
+      if (role === 'host' && webrtc.localStream) {
+        videoRef.current.srcObject = webrtc.localStream;
+      } else if (role === 'viewer' && webrtc.remoteStream) {
+        videoRef.current.srcObject = webrtc.remoteStream;
+      }
     }
   }, [webrtc.localStream, webrtc.remoteStream, role]);
 
@@ -37,15 +37,15 @@ function App() {
 
   // If not ACTIVE, or Viewer hasn't authenticated yet, show Setup Screen
   if (sessionState !== 'ACTIVE' || role === 'waiting' || role === 'viewer-auth-required' || (role === 'viewer' && sessionState === 'AUTH_REQUIRED')) {
-      return (
-          <SetupScreen 
-              sessionState={sessionState} 
-              role={role} 
-              authError={authError} 
-              configureSession={configureSession} 
-              authenticate={authenticate} 
-          />
-      );
+    return (
+      <SetupScreen
+        sessionState={sessionState}
+        role={role}
+        authError={authError}
+        configureSession={configureSession}
+        authenticate={authenticate}
+      />
+    );
   }
 
   // Active Session (Host or authenticated Viewer)
@@ -62,57 +62,57 @@ function App() {
           <img src={rightLogo} alt="UNAVAILABLE" />
         </div>
       </div>
-      
+
       <div className="body-container">
         <h2>
-          Aston Institute of Photonics Technologies Aston University, 
-          Birmingham, UK Geraldo Gomes, Rafael Vieira, Pedro Freire, 
+          Aston Institute of Photonics Technologies Aston University,
+          Birmingham, UK Geraldo Gomes, Rafael Vieira, Pedro Freire,
           Yaroslav Prylepskiy, Sergei Turitsyn
         </h2>
 
         <div className={`connection-status ${getStatusClass()}`}>
           Connection Status: {connectionStatus} | Role: {role.toUpperCase()}
           {role === 'host' && generatedPassword && (
-              <span style={{marginLeft: '20px', color: '#ffea00'}}>
-                  Session Password: {generatedPassword}
-              </span>
+            <span style={{ marginLeft: '20px', color: '#ffea00' }}>
+              Session Password: {generatedPassword}
+            </span>
           )}
           {role === 'host' && (
-              <span style={{marginLeft: '20px', color: senderConnected ? '#00ff00' : '#ff0000'}}>
-                  Data Source Connected: {senderConnected ? 'YES' : 'NO'}
-              </span>
+            <span style={{ marginLeft: '20px', color: senderConnected ? '#00ff00' : '#ff0000' }}>
+              Data Source Connected: {senderConnected ? 'YES' : 'NO'}
+            </span>
           )}
         </div>
 
         <div className="grid-container">
           {/* --- Left Column --- */}
           <div className="left-column">
-            
+
             {role === 'host' && !webrtc.localStream && (
-                <div style={{marginBottom: '10px'}}>
-                    <button onClick={webrtc.startHostStream} style={{padding: '10px', width: '100%', cursor: 'pointer'}}>
-                        Start Camera Broadcast
-                    </button>
-                </div>
+              <div style={{ marginBottom: '10px' }}>
+                <button onClick={webrtc.startHostStream} style={{ padding: '10px', width: '100%', cursor: 'pointer' }}>
+                  Start Camera Broadcast
+                </button>
+              </div>
             )}
 
-            <div className="video-container" style={{backgroundColor: '#000'}}>
+            <div className="video-container" style={{ backgroundColor: '#000' }}>
               {(webrtc.localStream || webrtc.remoteStream) ? (
-                  <video 
-                    ref={videoRef} 
-                    autoPlay 
-                    playsInline 
-                    muted={role === 'host'} 
-                    style={{width: '100%', height: '100%', objectFit: 'cover'}}
-                  />
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted={role === 'host'}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
               ) : (
-                  <img src={videoUnavailable} alt="ERROR" style={{width: '100%'}}/>
+                <img src={videoUnavailable} alt="ERROR" style={{ width: '100%' }} />
               )}
             </div>
 
             <div className="vibration-container">
-              <VibrationSensor latestData={graphData.vibrationValue} title='Vibration Sensor'/>
-              <VibrationSensor latestData={graphData.vibrationFPGA} title='FPGA Sensing'/>
+              <VibrationSensor latestData={graphData.vibrationValue} title='Vibration Sensor' />
+              <VibrationSensor latestData={graphData.vibrationFPGA} title='FPGA Sensing' />
             </div>
           </div>
 
@@ -121,22 +121,22 @@ function App() {
             <div style={{ position: 'relative' }}>
               <div className="sop-text">SOP</div>
               <div className="spherical-container">
-                <SphericalGraph vectorData={graphData.vectorData1} title="Low Precision"/>
-                <SphericalGraph vectorData={graphData.vectorData2} title="Medium Precision"/>
-                <SphericalGraph vectorData={graphData.vectorData3} title="High Precision"/>
+                <SphericalGraph vectorData={graphData.vectorData1} title="Low Precision" />
+                <SphericalGraph vectorData={graphData.vectorData2} title="Medium Precision" />
+                <SphericalGraph vectorData={graphData.vectorData3} title="High Precision" />
               </div>
             </div>
             <div>
               <h2>Communication Data</h2>
               <div className="comms-container">
-                <CommunicationData latestData={graphData.communicationData}/>
-                <CommunicationData latestData={graphData.communicationData}/>
-                <CommunicationData latestData={graphData.communicationData}/>
+                <CommunicationData latestData={graphData.communicationData} />
+                <CommunicationData latestData={graphData.communicationData} />
+                <CommunicationData latestData={graphData.communicationData} />
               </div>
             </div>
           </div>
         </div>
-        
+
       </div>
     </div>
   )

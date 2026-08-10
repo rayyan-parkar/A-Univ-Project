@@ -28,7 +28,7 @@ const TARPIT_MS = 5000;
 wss.on('connection', async (ws, req) => {
     const ip = req.socket.remoteAddress;
     const { query } = parse(req.url, true);
-    
+
     // IP Whitelist Check (Tarpit)
     if (sessionState === 'ACTIVE' && hostConfig.whitelist.length > 0) {
         if (!hostConfig.whitelist.includes(ip)) {
@@ -52,10 +52,7 @@ wss.on('connection', async (ws, req) => {
         } else {
             ws.close(1008, 'Invalid sender token');
         }
-        return;
-    }
-
-    if (sessionState === 'IDLE') {
+    } else if (sessionState === 'IDLE') {
         sessionState = 'CONFIGURING';
         connectedSockets.set(ws, { role: 'host', ip, authenticated: true });
         ws.send(JSON.stringify({ type: 'server-state', state: 'CONFIGURING', role: 'host' }));
@@ -153,14 +150,26 @@ function broadcastToDashboards(msg) {
 async function handleHostOffer(ws, sdp) {
     if (hostPC) hostPC.close();
     hostTracks = [];
-    
+
     hostPC = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
     });
 
-    hostPC.ontrack = (event) => {
+    hostPC.ontrack = async (event) => {
         hostTracks.push(event.track);
         console.log('Received track from host:', event.track.kind);
+        
+        // Push the new track to all existing viewer connections
+        for (let [ws, pc] of viewerPCs.entries()) {
+            try {
+                pc.addTrack(event.track);
+                const offer = await pc.createOffer({ offerToReceiveVideo: true, offerToReceiveAudio: true });
+                await pc.setLocalDescription(offer);
+                ws.send(JSON.stringify({ type: 'webrtc-offer', sdp: pc.localDescription }));
+            } catch (err) {
+                console.error('Error renegotiating with viewer:', err);
+            }
+        }
     };
 
     hostPC.onicecandidate = (event) => {
@@ -208,7 +217,7 @@ function handleDisconnect(ws) {
         if (hostPC) hostPC.close();
         hostPC = null;
         hostTracks = [];
-        
+
         for (let [sock, info] of connectedSockets.entries()) {
             if (sock !== ws) {
                 sock.send(JSON.stringify({ type: 'server-reset', message: 'Host disconnected' }));

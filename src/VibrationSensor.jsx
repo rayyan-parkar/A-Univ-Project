@@ -18,6 +18,7 @@ const VibrationChart = React.memo(function VibrationChart({latestData, title}) {
 
     useEffect(() => {
         if (latestData != null) {
+            console.log(`[VibrationSensor] (${title}) Received new data:`, latestData);
             setSignalData(prev => {
                 const newData = [...prev];
                 newData.shift(); // Remove first element

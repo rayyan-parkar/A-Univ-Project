@@ -16,38 +16,38 @@ const vibrationPath = './src/data/VibrationData.txt';
 const vibrationPathFPGA = './src/data/VibrationData_FPGA.txt';
 
 async function readNewLinesStream(filePath, lastPosition) {
-  return new Promise((resolve, reject)=> {
+  return new Promise((resolve, reject) => {
     if (!fs.existsSync(filePath)) {
-      resolve({lines: [], newPosition: lastPosition});
+      resolve({ lines: [], newPosition: lastPosition });
       return;
     }
 
     const stats = fs.statSync(filePath);
     const fileSize = stats.size;
 
-    if (lastPosition>= fileSize) {
-      resolve({lines: [], newPosition: lastPosition});
+    if (lastPosition >= fileSize) {
+      resolve({ lines: [], newPosition: lastPosition });
       return;
     }
 
     const newLines = [];
     let currentPosition = lastPosition;
 
-    const stream = createReadStream(filePath, {start: lastPosition, encoding: 'utf8'});
-    const readline = createInterface( {input: stream, crlfDelay: Infinity})
+    const stream = createReadStream(filePath, { start: lastPosition, encoding: 'utf8' });
+    const readline = createInterface({ input: stream, crlfDelay: Infinity })
 
-    readline.on('line', line=> {
+    readline.on('line', line => {
       if (line.trim()) {
         newLines.push(line.trim());
       }
-      currentPosition+= Buffer.byteLength(line + '\n', 'utf-8');
+      currentPosition += Buffer.byteLength(line + '\n', 'utf-8');
     });
 
-    readline.on('close', ()=> {
-      resolve({lines: newLines, newPosition: fileSize});
+    readline.on('close', () => {
+      resolve({ lines: newLines, newPosition: fileSize });
     });
 
-    readline.on('error', error=> {
+    readline.on('error', error => {
       console.error(`Error reading ${filePath}:`, error);
       resolve({ lines: [], newPosition: lastPosition });
     });
@@ -58,33 +58,33 @@ let lineIndex = 0;
 
 async function sendSphericalData(socket) {
   try {
-    const[lowData, medData, highData] = await Promise.all([
+    const [lowData, medData, highData] = await Promise.all([
       readNewLinesStream(sphericalPathLow, 0),
       readNewLinesStream(sphericalPathMed, 0),
       readNewLinesStream(sphericalPathHigh, 0)
     ]);
 
-    if (lineIndex < lowData.lines.length && 
-        lineIndex < medData.lines.length && 
-        lineIndex < highData.lines.length) {
-      
+    if (lineIndex < lowData.lines.length &&
+      lineIndex < medData.lines.length &&
+      lineIndex < highData.lines.length) {
+
       const vectors = [];
-      
+
       try {
         const parseLine = (line) => {
           const values = line.split(/\s+/).map(parseFloat);
           if (values.some(isNaN)) throw new Error('Malformed data line: NaN detected');
           return values;
         };
-        
+
         const lowValues = parseLine(lowData.lines[lineIndex]);
         const medValues = parseLine(medData.lines[lineIndex]);
         const highValues = parseLine(highData.lines[lineIndex]);
-        
-        vectors.push([lowValues[0],lowValues[1],lowValues[2]], [lowValues[3],lowValues[4],lowValues[5]], [lowValues[6],lowValues[7],lowValues[8]]);
-        vectors.push([medValues[0],medValues[1],medValues[2]], [medValues[3],medValues[4],medValues[5]], [medValues[6],medValues[7],medValues[8]]);
-        vectors.push([highValues[0],highValues[1],highValues[2]], [highValues[3],highValues[4],highValues[5]], [highValues[6],highValues[7],highValues[8]]);
-        
+
+        vectors.push([lowValues[0], lowValues[1], lowValues[2]], [lowValues[3], lowValues[4], lowValues[5]], [lowValues[6], lowValues[7], lowValues[8]]);
+        vectors.push([medValues[0], medValues[1], medValues[2]], [medValues[3], medValues[4], medValues[5]], [medValues[6], medValues[7], medValues[8]]);
+        vectors.push([highValues[0], highValues[1], highValues[2]], [highValues[3], highValues[4], highValues[5]], [highValues[6], highValues[7], highValues[8]]);
+
         const vectorMessage = {
           type: 'vector',
           data: vectors
@@ -95,24 +95,24 @@ async function sendSphericalData(socket) {
       } catch (err) {
         console.warn(`Skipping malformed vector data at line ${lineIndex}: ${err.message}`);
       }
-      
-      lineIndex++; 
-    } 
+
+      lineIndex++;
+    }
     else {
       lineIndex = 0;
       console.log('Restarting from beginning of files');
     }
   }
   catch (error) {
-    console.error('Error reading spherical data:',error);
+    console.error('Error reading spherical data:', error);
   }
 }
 
 async function sendVibrationData(socket) {
   try {
-    const[vibData, vibFpgaData] = await Promise.all([readNewLinesStream(vibrationPath, 0), readNewLinesStream(vibrationPathFPGA, 0)]);
+    const [vibData, vibFpgaData] = await Promise.all([readNewLinesStream(vibrationPath, 0), readNewLinesStream(vibrationPathFPGA, 0)]);
 
-    if (lineIndex < vibData.lines.length && lineIndex<vibFpgaData.lines.length) {
+    if (lineIndex < vibData.lines.length && lineIndex < vibFpgaData.lines.length) {
 
       try {
         const vibValues = vibData.lines[lineIndex].split(/\s+/).map(parseFloat);
@@ -132,7 +132,7 @@ async function sendVibrationData(socket) {
       } catch (err) {
         console.warn(`Skipping malformed vibration data at line ${lineIndex}: ${err.message}`);
       }
-      
+
       lineIndex++;
     }
     else {
@@ -147,14 +147,14 @@ async function sendVibrationData(socket) {
 
 async function sendCommunicationData(socket) {
   try {
-    const[lowData, medData, highData] = await Promise.all([
+    const [lowData, medData, highData] = await Promise.all([
       readNewLinesStream(communicationPathLow, 0),
       readNewLinesStream(communicationPathMed, 0),
       readNewLinesStream(communicationPathHigh, 0),
     ]);
 
     if (lineIndex < lowData.lines.length && lineIndex < medData.lines.length && lineIndex < highData.lines.length) {
-      
+
       try {
         const commData = [];
 
@@ -163,7 +163,7 @@ async function sendCommunicationData(socket) {
         const highValues = highData.lines[lineIndex].split(/\s+/).map(parseFloat);
 
         if (lowValues.some(isNaN) || medValues.some(isNaN) || highValues.some(isNaN)) {
-            throw new Error('NaN detected in communication data');
+          throw new Error('NaN detected in communication data');
         }
 
         commData.push([lowValues[0], lowValues[1]]);

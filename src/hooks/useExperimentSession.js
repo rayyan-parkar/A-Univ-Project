@@ -7,7 +7,7 @@ export function useExperimentSession() {
     const [generatedPassword, setGeneratedPassword] = useState('');
     const [authError, setAuthError] = useState('');
     const [senderConnected, setSenderConnected] = useState(false);
-    
+
     // Graph Data States
     const [vibrationValue, setVibrationValue] = useState(null);
     const [vibrationFPGA, setVibrationFPGA] = useState(null);
@@ -20,8 +20,13 @@ export function useExperimentSession() {
 
     useEffect(() => {
         const connectWebSocket = () => {
-            // Use explicit IPv4 loopback to avoid IPv6 resolution issues on NixOS
-            const socket = new WebSocket(`ws://127.0.0.1:8181`);
+            const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            const defaultWsUrl = isLocal
+                ? 'ws://127.0.0.1:8181'
+                : `wss://${window.location.hostname}:8181`;
+
+            const wsUrl = import.meta.env.VITE_WS_URL || defaultWsUrl;
+            const socket = new WebSocket(wsUrl);
             socketRef.current = socket;
 
             socket.onopen = () => {
@@ -32,7 +37,11 @@ export function useExperimentSession() {
                 let parsed;
                 try {
                     parsed = JSON.parse(event.data);
-                } catch(e) { return; }
+                } catch (e) { return; }
+
+                if (parsed.type === 'waveform' || parsed.type === 'vector') {
+                    console.log(`[Frontend] Received ${parsed.type} data:`, parsed.data);
+                }
 
                 if (parsed.type === 'server-state') {
                     setSessionState(parsed.state);
@@ -40,7 +49,7 @@ export function useExperimentSession() {
                     if (parsed.role === 'viewer-auth-required') {
                         setSessionState('AUTH_REQUIRED');
                     }
-                } 
+                }
                 else if (parsed.type === 'config-success') {
                     setGeneratedPassword(parsed.password);
                     setSessionState('ACTIVE');
@@ -59,7 +68,7 @@ export function useExperimentSession() {
                     alert('Session was reset by server (Host disconnected).');
                     window.location.reload();
                 }
-                
+
                 // Data Parsers
                 else if (parsed.type === 'waveform') {
                     if (parsed.data.length === 2) {

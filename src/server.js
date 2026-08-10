@@ -43,6 +43,18 @@ wss.on('connection', async (ws, req) => {
     ws.on('error', (err) => console.error('WS Error:', err.message));
     ws.on('close', () => handleDisconnect(ws));
 
+    if (query.role === 'sender') {
+        const expectedToken = process.env.VITE_SENDER_KEY || 'default_sender_key';
+        if (query.token === expectedToken) {
+            connectedSockets.set(ws, { role: 'sender', ip, authenticated: true });
+            console.log(`Data Sender connected from ${ip}`);
+            broadcastToDashboards({ type: 'sender-status', connected: true });
+        } else {
+            ws.close(1008, 'Invalid sender token');
+        }
+        return;
+    }
+
     if (sessionState === 'IDLE') {
         sessionState = 'CONFIGURING';
         connectedSockets.set(ws, { role: 'host', ip, authenticated: true });
@@ -52,18 +64,8 @@ wss.on('connection', async (ws, req) => {
         connectedSockets.set(ws, { role: 'waiting', ip, authenticated: false });
         ws.send(JSON.stringify({ type: 'server-state', state: 'CONFIGURING', role: 'waiting' }));
     } else if (sessionState === 'ACTIVE') {
-        if (query.role === 'sender') {
-            if (query.token === process.env.VITE_SENDER_KEY) {
-                connectedSockets.set(ws, { role: 'sender', ip, authenticated: true });
-                console.log(`Data Sender connected from ${ip}`);
-                broadcastToDashboards({ type: 'sender-status', connected: true });
-            } else {
-                ws.close(1008, 'Invalid sender token');
-            }
-        } else {
-            connectedSockets.set(ws, { role: 'viewer', ip, authenticated: false });
-            ws.send(JSON.stringify({ type: 'server-state', state: 'ACTIVE', role: 'viewer-auth-required' }));
-        }
+        connectedSockets.set(ws, { role: 'viewer', ip, authenticated: false });
+        ws.send(JSON.stringify({ type: 'server-state', state: 'ACTIVE', role: 'viewer-auth-required' }));
     }
 
     ws.on('message', async (message) => {

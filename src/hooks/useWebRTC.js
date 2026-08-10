@@ -22,7 +22,11 @@ export function useWebRTC(socketRef, role) {
 
                     pcRef.current.ontrack = (e) => {
                         console.log('Received remote track', e.track.kind);
-                        setRemoteStream(e.streams[0]);
+                        if (e.streams && e.streams[0]) {
+                            setRemoteStream(e.streams[0]);
+                        } else {
+                            setRemoteStream(new MediaStream([e.track]));
+                        }
                     };
 
                     pcRef.current.onicecandidate = (e) => {

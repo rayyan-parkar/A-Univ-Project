@@ -5,7 +5,7 @@ import { createInterface } from 'readline';
 
 dotenv.config()
 
-const key = process.env.VITE_SENDER_KEY;
+const key = process.env.VITE_SENDER_KEY || 'default_sender_key';
 const sphericalPathLow = './src/data/SphericalData_low.txt';
 const sphericalPathMed = './src/data/SphericalData_medium.txt';
 const sphericalPathHigh = './src/data/SphericalData_high.txt';

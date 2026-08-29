@@ -1,10 +1,11 @@
 # Fixed Precision Impact on State-of-Polarization Sensing
-A real-time visualization application developed for the Aston Institute of Photonics Technologies at Aston University, presented at the OFC (Optical Fiber Communication) Conference.
+A real-time visualization application developed for the Aston Institute of Photonics Technologies at Aston University, to be presented at the OFC Conference.
 
 ## Overview
 This custom software application was created to demonstrate and visualize the impact of fixed precision on State-of-Polarization (SOP) sensing using coherent transceivers. The application provides real-time data visualization of photonics research, including vibration sensing, SOP vector representations, and communication metrics.
 
-The architecture uses a **Selective Forwarding Unit (SFU)** model. The first browser instance to connect is automatically assigned as the **Host**, broadcasting a camera stream and dataset measurements. Subsequent instances connect as **Viewers** to consume the forwarded WebRTC video stream and synchronized photonics data.
+
+The architecture uses an **Selective Forwarding Unit (SFU)**. The first browser instance to connect is automatically assigned as the **Host**, broadcasting a camera stream and dataset values. Subsequent instances connect as **Viewers** to receive the video stream and data.
 
 ## Research Team
 Aston Institute of Photonics Technologies, Aston University, Birmingham, UK
@@ -21,19 +22,19 @@ Aston Institute of Photonics Technologies, Aston University, Birmingham, UK
 
 ### Real-Time Data Visualization
 * **Vibration Sensing:** Displays live vibration sensor data and FPGA sensing measurements.
-* **State-of-Polarization Visualization:** Interactive 3D spherical graphs showing SOP vectors at three precision levels:
+* **State-of-Polarization Visualization:** 3D spherical graphs showing SOP vectors at three precision levels:
   * Low Precision
   * Medium Precision
   * High Precision
-* **Communication Data Monitoring:** Real-time 2D constellation scatter plots with precision-tiered SNR distributions.
-* **Video Feed Support:** Native WebRTC SFU streaming directly from the Host camera to all Viewers.
+* **Communication Data Monitoring:** 2D constellation scatter plots with SNR distributions.
+* **Video Feed Support:** Video streaming directly from the Host camera to all Viewers.
 
 ### Host GUI Data Transmission Engine
 * **Single-Session Host Control:** The Host controls both video broadcasting and data transmission directly from the dashboard GUI.
 * **Dual Data Modes:**
-  * **Debug / Simulation Mode:** Generates realistic synthetic photonics data directly in browser memory (0 bytes written to disk, preventing test storage ballooning).
-  * **Live Experiment Files Mode:** Allows the Host to select local experiment files from their machine, enforcing strict 8/8 filename validation and tailing live appended measurements.
-* **Enforced File Naming System:** Validates and matches all 8 required experiment files:
+  * **Debug / Simulation Mode:** Generates photonics data directly in browser memory.
+  * **Live Experiment Files Mode:** Allows the Host to select local experiment files from their machine.
+* **Enforced File Naming System:** Validates and matches all 8 required experiment files ensuring they meet the following:
   1. `VibrationData.txt`
   2. `VibrationData_FPGA.txt`
   3. `SphericalData_low.txt`
@@ -45,8 +46,7 @@ Aston Institute of Photonics Technologies, Aston University, Birmingham, UK
 
 ### Security & Session Management
 * **Single-Session Flow:** Dynamic assignment of the first connected user as Host. Subsequent clients are held in a waiting state until the Host configures the room.
-* **Hardened Attack Surface:** Phased out external sender endpoints; the Host browser is the sole authenticated authority for video and data streams.
-* **Access Control:** Host configurations include setting the maximum number of viewers, a cryptographically secure 16-digit hexadecimal password, and an IP whitelist.
+* **Access Control:** Host configurations allow them to set the maximum number of viewers, a cryptographically secure 16-digit hexadecimal password, and an IP whitelist.
 * **Tarpit Security:** Any unauthorized IP trying to connect to an active session is tarpitted with a 5-second delay to mitigate automated script-scanning.
 * **Connection Management:** Automatic reconnection with color-coded statuses (🟢 Connected, 🟡 Error, 🔴 Disconnected).
 
@@ -100,7 +100,6 @@ Aston Institute of Photonics Technologies, Aston University, Birmingham, UK
 ## Usage
 
 ### 1. Start the SFU Server
-The unified server coordinates signaling, auth, tarpitting, WebRTC media forwarding, and data relay:
 ```bash
 node src/server.js
 ```

@@ -146,23 +146,31 @@ function App() {
 
                 {broadcaster.broadcastMode === 'live' && (
                   <div className="file-selection-area">
-                    <label className="host-file-btn">
-                      📂 Select Experiment Files / Folder
-                      <input
-                        type="file"
-                        multiple
-                        onChange={(e) => broadcaster.handleFilesSelected(e.target.files)}
-                        style={{ display: 'none' }}
-                      />
-                    </label>
-                    <span className={`file-status-pill ${broadcaster.isAllFilesMatched ? 'matched' : 'unmatched'}`}>
-                      {broadcaster.matchedFiles.length}/8 Files Matched {broadcaster.isAllFilesMatched ? '✅' : '⚠️'}
-                    </span>
-                    {!broadcaster.isAllFilesMatched && broadcaster.missingFiles.length > 0 && (
-                      <div className="missing-files-hint">
-                        Required: {REQUIRED_FILES.join(', ')}
-                      </div>
-                    )}
+                    <span className="dir-label">Folder:</span>
+                    <input
+                      type="text"
+                      className="host-dir-input"
+                      value={broadcaster.liveDir}
+                      onChange={(e) => broadcaster.setLiveDir(e.target.value)}
+                      disabled={broadcaster.isBroadcasting}
+                      placeholder="./test_experiment_data"
+                    />
+                    <button
+                      type="button"
+                      className={`host-preset-btn ${broadcaster.liveDir === './test_experiment_data' ? 'active' : ''}`}
+                      onClick={() => broadcaster.setLiveDir('./test_experiment_data')}
+                      disabled={broadcaster.isBroadcasting}
+                    >
+                      🧪 test_experiment_data
+                    </button>
+                    <button
+                      type="button"
+                      className={`host-preset-btn ${broadcaster.liveDir === './src/data' ? 'active' : ''}`}
+                      onClick={() => broadcaster.setLiveDir('./src/data')}
+                      disabled={broadcaster.isBroadcasting}
+                    >
+                      📦 src/data
+                    </button>
                   </div>
                 )}
               </div>

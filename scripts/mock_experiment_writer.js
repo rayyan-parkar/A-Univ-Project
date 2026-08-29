@@ -23,8 +23,11 @@ const files = {
   commHigh: path.join(outDir, 'CommunicationData_high.txt'),
 };
 
+let interval = null;
+
 // Cleanup on exit
 function cleanup() {
+  if (interval) clearInterval(interval);
   console.log('\n🧹 Cleaning up test_experiment_data/ directory...');
   try {
     if (fs.existsSync(outDir)) {
@@ -103,7 +106,7 @@ console.log('⚡ Continuously appending live experiment measurements every 100ms
 console.log('👉 Point the Host GUI "Live Experiment Files" selector to this folder.');
 console.log('🛑 Press Ctrl+C at any time to stop and automatically delete test files.\n');
 
-const interval = setInterval(() => {
+interval = setInterval(() => {
   step++;
   const line = generateLine(step);
 

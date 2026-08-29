@@ -1,5 +1,7 @@
 import { WebSocketServer } from 'ws';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import wrtc from '@roamhq/wrtc';
 const { RTCPeerConnection, RTCSessionDescription, RTCIceCandidate } = wrtc;
 import dotenv from 'dotenv';
@@ -18,6 +20,103 @@ let connectedSockets = new Map(); // ws -> { role, ip, authenticated }
 let hostPC = null;
 let hostTracks = [];
 let viewerPCs = new Map(); // ws -> RTCPeerConnection
+
+// Server-side Live Ingest State
+let liveIngestInterval = null;
+let liveIndices = { spherical: 0, vibration: 0, communication: 0 };
+
+function stopLiveIngest() {
+    if (liveIngestInterval) {
+        clearInterval(liveIngestInterval);
+        liveIngestInterval = null;
+        console.log('Live experiment ingest stopped.');
+    }
+}
+
+function broadcastPayload(msgObj) {
+    const raw = JSON.stringify(msgObj);
+    for (let [sock, info] of connectedSockets.entries()) {
+        if (info.authenticated && (info.role === 'host' || info.role === 'viewer')) {
+            if (sock.readyState === 1) sock.send(raw);
+        }
+    }
+}
+
+function startLiveIngest(dirPath) {
+    stopLiveIngest();
+    const resolvedDir = path.resolve(process.cwd(), dirPath || './src/data');
+    liveIndices = { spherical: 0, vibration: 0, communication: 0 };
+    console.log(`Starting live experiment ingest from: ${resolvedDir}`);
+
+    const parseFloats = (line) => {
+        if (!line) return [];
+        return line.split(/\s+/).map(parseFloat).filter(v => !isNaN(v));
+    };
+
+    const loadLinesSafe = (filename) => {
+        try {
+            const p = path.join(resolvedDir, filename);
+            if (!fs.existsSync(p)) return [];
+            const text = fs.readFileSync(p, 'utf8');
+            return text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+        } catch {
+            return [];
+        }
+    };
+
+    liveIngestInterval = setInterval(() => {
+        // 1. Vibration
+        const vibLines = loadLinesSafe('VibrationData.txt');
+        const fpgaLines = loadLinesSafe('VibrationData_FPGA.txt');
+        const vibLen = Math.min(vibLines.length, fpgaLines.length);
+        if (liveIndices.vibration < vibLen) {
+            const v = parseFloats(vibLines[liveIndices.vibration]);
+            const f = parseFloats(fpgaLines[liveIndices.vibration]);
+            if (v.length > 0 && f.length > 0) {
+                broadcastPayload({ type: 'waveform', data: [v[0], f[0]] });
+            }
+            liveIndices.vibration++;
+        }
+
+        // 2. Spherical SOP
+        const sLow = loadLinesSafe('SphericalData_low.txt');
+        const sMed = loadLinesSafe('SphericalData_medium.txt');
+        const sHigh = loadLinesSafe('SphericalData_high.txt');
+        const sLen = Math.min(sLow.length, sMed.length, sHigh.length);
+        if (liveIndices.spherical < sLen) {
+            const l = parseFloats(sLow[liveIndices.spherical]);
+            const m = parseFloats(sMed[liveIndices.spherical]);
+            const h = parseFloats(sHigh[liveIndices.spherical]);
+            if (l.length >= 9 && m.length >= 9 && h.length >= 9) {
+                const vectors = [
+                    [l[0], l[1], l[2]], [l[3], l[4], l[5]], [l[6], l[7], l[8]],
+                    [m[0], m[1], m[2]], [m[3], m[4], m[5]], [m[6], m[7], m[8]],
+                    [h[0], h[1], h[2]], [h[3], h[4], h[5]], [h[6], h[7], h[8]],
+                ];
+                broadcastPayload({ type: 'vector', data: vectors });
+            }
+            liveIndices.spherical++;
+        }
+
+        // 3. Communication
+        const cLow = loadLinesSafe('CommunicationData_low.txt');
+        const cMed = loadLinesSafe('CommunicationData_medium.txt');
+        const cHigh = loadLinesSafe('CommunicationData_high.txt');
+        const cLen = Math.min(cLow.length, cMed.length, cHigh.length);
+        if (liveIndices.communication < cLen) {
+            const l = parseFloats(cLow[liveIndices.communication]);
+            const m = parseFloats(cMed[liveIndices.communication]);
+            const h = parseFloats(cHigh[liveIndices.communication]);
+            if (l.length >= 2 && m.length >= 2 && h.length >= 2) {
+                broadcastPayload({
+                    type: 'communication',
+                    data: [[l[0], l[1]], [m[0], m[1]], [h[0], h[1]]]
+                });
+            }
+            liveIndices.communication++;
+        }
+    }, 16);
+}
 
 function generatePassword() {
     return crypto.randomBytes(8).toString('hex');
@@ -82,6 +181,14 @@ wss.on('connection', async (ws, req) => {
                     sock.send(JSON.stringify({ type: 'server-state', state: 'ACTIVE', role: 'viewer-auth-required' }));
                 }
             }
+        }
+
+        // Host Live Ingest Controls
+        if (client.role === 'host' && parsed.type === 'start-live-ingest') {
+            startLiveIngest(parsed.dir);
+        }
+        if (client.role === 'host' && parsed.type === 'stop-live-ingest') {
+            stopLiveIngest();
         }
 
         // Viewer Authentication
@@ -205,6 +312,7 @@ function handleDisconnect(ws) {
 
     if (client.role === 'host') {
         console.log('Host disconnected. Resetting session.');
+        stopLiveIngest();
         sessionState = 'IDLE';
         if (hostPC) hostPC.close();
         hostPC = null;

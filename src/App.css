@@ -253,44 +253,46 @@ body {
   padding-top: 4px;
 }
 
-.host-file-btn {
+.dir-label {
+  color: #64748b;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: bold;
+}
+
+.host-dir-input {
   background-color: #ffffff;
   border: 1px solid #cbd5e1;
-  padding: 6px 12px;
+  padding: 6px 10px;
   font-size: 13px;
+  border-radius: 6px;
+  color: #1e293b;
+  width: 190px;
+  font-family: monospace;
+}
+
+.host-preset-btn {
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  padding: 6px 10px;
+  font-size: 12px;
   font-weight: bold;
   border-radius: 6px;
   cursor: pointer;
-  color: #1e293b;
+  color: #334155;
+  transition: all 0.15s ease;
 }
 
-.host-file-btn:hover {
+.host-preset-btn:hover {
   background-color: #f1f5f9;
+  border-color: #94a3b8;
 }
 
-.file-status-pill {
-  font-size: 12px;
-  font-weight: bold;
-  padding: 4px 8px;
-  border-radius: 12px;
-}
-
-.file-status-pill.matched {
-  background-color: #dcfce7;
-  color: #166534;
-  border: 1px solid #86efac;
-}
-
-.file-status-pill.unmatched {
-  background-color: #fef9c3;
-  color: #854d0e;
-  border: 1px solid #fde047;
-}
-
-.missing-files-hint {
-  width: 100%;
-  font-size: 11px;
-  color: #94a3b8;
+.host-preset-btn.active {
+  background-color: #eff6ff;
+  border-color: #3b82f6;
+  color: #1d4ed8;
 }
 
 /* ==========================================================================

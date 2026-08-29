@@ -25,10 +25,10 @@ function App() {
     if (videoRef.current) {
       if (role === 'host' && webrtc.localStream) {
         videoRef.current.srcObject = webrtc.localStream;
-        videoRef.current.play().catch(() => {});
+        videoRef.current.play().catch(() => { });
       } else if (role === 'viewer' && webrtc.remoteStream && webrtc.isHostStreaming) {
         videoRef.current.srcObject = webrtc.remoteStream;
-        videoRef.current.play().catch(() => {});
+        videoRef.current.play().catch(() => { });
       } else {
         videoRef.current.srcObject = null;
       }
@@ -131,7 +131,7 @@ function App() {
                 <SphericalGraph vectorData={graphData.vectorData3} title="High Precision" />
               </div>
             </div>
-            <div>
+            <div className="comms-section">
               <h2>Communication Data</h2>
               <div className="comms-container">
                 <CommunicationData latestData={graphData.communicationData} />
@@ -141,6 +141,10 @@ function App() {
             </div>
           </div>
         </div>
+
+        <footer>
+          <p>By Rayyan Parkar</p>
+        </footer>
 
       </div>
     </div>

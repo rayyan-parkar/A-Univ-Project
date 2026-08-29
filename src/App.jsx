@@ -134,9 +134,9 @@ function App() {
             <div className="comms-section">
               <h2>Communication Data</h2>
               <div className="comms-container">
-                <CommunicationData latestData={graphData.communicationData} />
-                <CommunicationData latestData={graphData.communicationData} />
-                <CommunicationData latestData={graphData.communicationData} />
+                <CommunicationData latestData={graphData.communicationData?.[0]} />
+                <CommunicationData latestData={graphData.communicationData?.[1]} />
+                <CommunicationData latestData={graphData.communicationData?.[2]} />
               </div>
             </div>
           </div>

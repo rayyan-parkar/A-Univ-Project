@@ -14,11 +14,15 @@ const CommunicationData = React.memo(function CommunicationData({ latestData }) 
     const [signalData, setSignalData] = useState([]);
 
     useEffect(() => {
-        if (latestData != null && Array.isArray(latestData) && latestData.length > 0) {
-            setSignalData(prev => {
-                const combined = [...prev, ...latestData];
-                return combined.length > 50 ? combined.slice(-50) : combined;
-            });
+        if (latestData != null && Array.isArray(latestData) && latestData.length >= 2) {
+            const x = parseFloat(latestData[0]);
+            const y = parseFloat(latestData[1]);
+            if (!isNaN(x) && !isNaN(y)) {
+                setSignalData(prev => {
+                    const combined = [...prev, { x, y }];
+                    return combined.length > 50 ? combined.slice(-50) : combined;
+                });
+            }
         }
     }, [latestData]);
 

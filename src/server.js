@@ -43,16 +43,7 @@ wss.on('connection', async (ws, req) => {
     ws.on('error', (err) => console.error('WS Error:', err.message));
     ws.on('close', () => handleDisconnect(ws));
 
-    if (query.role === 'sender') {
-        const expectedToken = process.env.VITE_SENDER_KEY || 'default_sender_key';
-        if (query.token === expectedToken) {
-            connectedSockets.set(ws, { role: 'sender', ip, authenticated: true });
-            console.log(`Data Sender connected from ${ip}`);
-            broadcastToDashboards({ type: 'sender-status', connected: true });
-        } else {
-            ws.close(1008, 'Invalid sender token');
-        }
-    } else if (sessionState === 'IDLE') {
+    if (sessionState === 'IDLE') {
         sessionState = 'CONFIGURING';
         connectedSockets.set(ws, { role: 'host', ip, authenticated: true });
         ws.send(JSON.stringify({ type: 'server-state', state: 'CONFIGURING', role: 'host' }));
@@ -133,24 +124,16 @@ wss.on('connection', async (ws, req) => {
             if (pc && parsed.candidate) pc.addIceCandidate(new RTCIceCandidate(parsed.candidate)).catch(e=>console.error('ICE viewer error', e));
         }
 
-        // Graph Data from Sender
-        if (client.role === 'sender' && (parsed.type === 'vector' || parsed.type === 'waveform' || parsed.type === 'communication')) {
+        // Graph Data from Host (forwarded to all authenticated Viewers)
+        if (client.role === 'host' && (parsed.type === 'vector' || parsed.type === 'waveform' || parsed.type === 'communication')) {
             for (let [sock, info] of connectedSockets.entries()) {
-                if (info.role === 'host' || (info.role === 'viewer' && info.authenticated)) {
+                if (sock !== ws && info.role === 'viewer' && info.authenticated) {
                     if (sock.readyState === 1) sock.send(message.toString());
                 }
             }
         }
     });
 });
-
-function broadcastToDashboards(msg) {
-    for (let [sock, info] of connectedSockets.entries()) {
-        if (info.role === 'host') {
-            if (sock.readyState === 1) sock.send(JSON.stringify(msg));
-        }
-    }
-}
 
 async function handleHostOffer(ws, sdp) {
     if (hostPC) hostPC.close();
@@ -240,9 +223,6 @@ function handleDisconnect(ws) {
         const pc = viewerPCs.get(ws);
         if (pc) pc.close();
         viewerPCs.delete(ws);
-        connectedSockets.delete(ws);
-    } else if (client.role === 'sender') {
-        broadcastToDashboards({ type: 'sender-status', connected: false });
         connectedSockets.delete(ws);
     } else {
         connectedSockets.delete(ws);

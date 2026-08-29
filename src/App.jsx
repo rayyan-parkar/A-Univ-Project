@@ -9,13 +9,15 @@ import './App.css';
 
 import { useExperimentSession } from './hooks/useExperimentSession';
 import { useWebRTC } from './hooks/useWebRTC';
+import { useDataBroadcaster, REQUIRED_FILES } from './hooks/useDataBroadcaster';
 import SetupScreen from './components/SetupScreen';
 
 function App() {
   const session = useExperimentSession();
-  const { socketRef, connectionStatus, sessionState, role, generatedPassword, authError, configureSession, authenticate, senderConnected, graphData } = session;
+  const { socketRef, connectionStatus, sessionState, role, generatedPassword, authError, configureSession, authenticate, updateGraphData, graphData } = session;
 
   const webrtc = useWebRTC(socketRef, role);
+  const broadcaster = useDataBroadcaster(socketRef, updateGraphData);
 
   const videoRef = useRef(null);
 
@@ -84,8 +86,8 @@ function App() {
             </span>
           )}
           {role === 'host' && (
-            <span style={{ marginLeft: '20px', color: senderConnected ? '#00ff00' : '#ff0000' }}>
-              Data Source Connected: {senderConnected ? 'YES' : 'NO'}
+            <span style={{ marginLeft: '20px', color: broadcaster.isBroadcasting ? '#00ff00' : '#888888' }}>
+              Data Engine: {broadcaster.statusMessage}
             </span>
           )}
         </div>
@@ -94,11 +96,75 @@ function App() {
           {/* --- Left Column --- */}
           <div className="left-column">
 
-            {role === 'host' && !webrtc.localStream && (
-              <div style={{ marginBottom: '10px' }}>
-                <button onClick={webrtc.startHostStream} style={{ padding: '10px', width: '100%', cursor: 'pointer' }}>
-                  Start Camera Broadcast
-                </button>
+            {role === 'host' && (
+              <div className="host-controls-panel">
+                <div className="host-controls-row">
+                  {!webrtc.localStream ? (
+                    <button className="host-btn camera-btn" onClick={webrtc.startHostStream}>
+                      Start Camera Broadcast
+                    </button>
+                  ) : (
+                    <span className="host-badge camera-active">📹 Camera Active</span>
+                  )}
+
+                  {!broadcaster.isBroadcasting ? (
+                    <button className="host-btn data-start-btn" onClick={broadcaster.startBroadcasting}>
+                      Start Data Broadcast
+                    </button>
+                  ) : (
+                    <button className="host-btn data-stop-btn" onClick={broadcaster.stopBroadcasting}>
+                      ⏹ Stop Data Broadcast
+                    </button>
+                  )}
+                </div>
+
+                <div className="host-mode-row">
+                  <span className="mode-label">Mode:</span>
+                  <label className="mode-option">
+                    <input
+                      type="radio"
+                      name="broadcastMode"
+                      value="debug"
+                      checked={broadcaster.broadcastMode === 'debug'}
+                      onChange={() => broadcaster.setBroadcastMode('debug')}
+                      disabled={broadcaster.isBroadcasting}
+                    />
+                    Debug / Simulation (In-Memory)
+                  </label>
+                  <label className="mode-option">
+                    <input
+                      type="radio"
+                      name="broadcastMode"
+                      value="live"
+                      checked={broadcaster.broadcastMode === 'live'}
+                      onChange={() => broadcaster.setBroadcastMode('live')}
+                      disabled={broadcaster.isBroadcasting}
+                    />
+                    📂 Live Experiment Files
+                  </label>
+                </div>
+
+                {broadcaster.broadcastMode === 'live' && (
+                  <div className="file-selection-area">
+                    <label className="host-file-btn">
+                      📂 Select Experiment Files / Folder
+                      <input
+                        type="file"
+                        multiple
+                        onChange={(e) => broadcaster.handleFilesSelected(e.target.files)}
+                        style={{ display: 'none' }}
+                      />
+                    </label>
+                    <span className={`file-status-pill ${broadcaster.isAllFilesMatched ? 'matched' : 'unmatched'}`}>
+                      {broadcaster.matchedFiles.length}/8 Files Matched {broadcaster.isAllFilesMatched ? '✅' : '⚠️'}
+                    </span>
+                    {!broadcaster.isAllFilesMatched && broadcaster.missingFiles.length > 0 && (
+                      <div className="missing-files-hint">
+                        Required: {REQUIRED_FILES.join(', ')}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

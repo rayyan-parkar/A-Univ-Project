@@ -19,15 +19,21 @@ function App() {
 
   const videoRef = useRef(null);
 
+  const hasActiveStream = (role === 'host' && Boolean(webrtc.localStream)) || (role === 'viewer' && Boolean(webrtc.remoteStream && webrtc.isHostStreaming));
+
   useEffect(() => {
     if (videoRef.current) {
       if (role === 'host' && webrtc.localStream) {
         videoRef.current.srcObject = webrtc.localStream;
-      } else if (role === 'viewer' && webrtc.remoteStream) {
+        videoRef.current.play().catch(() => {});
+      } else if (role === 'viewer' && webrtc.remoteStream && webrtc.isHostStreaming) {
         videoRef.current.srcObject = webrtc.remoteStream;
+        videoRef.current.play().catch(() => {});
+      } else {
+        videoRef.current.srcObject = null;
       }
     }
-  }, [webrtc.localStream, webrtc.remoteStream, role]);
+  }, [webrtc.localStream, webrtc.remoteStream, webrtc.isHostStreaming, role]);
 
   const getStatusClass = () => {
     if (connectionStatus.includes('Connected')) return 'status-connected';
@@ -96,17 +102,16 @@ function App() {
               </div>
             )}
 
-            <div className="video-container" style={{ backgroundColor: '#000' }}>
-              {(webrtc.localStream || webrtc.remoteStream) ? (
+            <div className="video-container">
+              {hasActiveStream ? (
                 <video
                   ref={videoRef}
                   autoPlay
                   playsInline
-                  muted={role === 'host'}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  muted
                 />
               ) : (
-                <img src={videoUnavailable} alt="ERROR" style={{ width: '100%' }} />
+                <img src={videoUnavailable} alt="Video Unavailable" />
               )}
             </div>
 

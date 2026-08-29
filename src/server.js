@@ -69,7 +69,7 @@ wss.on('connection', async (ws, req) => {
         let parsed;
         try {
             parsed = JSON.parse(message.toString());
-        } catch(e) { return; }
+        } catch { return; }
 
         const client = connectedSockets.get(ws);
         if (!client) return;
@@ -103,7 +103,12 @@ wss.on('connection', async (ws, req) => {
                 } else {
                     client.authenticated = true;
                     ws.send(JSON.stringify({ type: 'auth-success' }));
-                    setupViewerPC(ws);
+                    if (hostTracks.length > 0) {
+                        setupViewerPC(ws);
+                        ws.send(JSON.stringify({ type: 'stream-status', active: true }));
+                    } else {
+                        ws.send(JSON.stringify({ type: 'stream-status', active: false }));
+                    }
                 }
             } else {
                 ws.send(JSON.stringify({ type: 'auth-fail', message: 'Invalid password' }));
@@ -156,18 +161,16 @@ async function handleHostOffer(ws, sdp) {
     });
 
     hostPC.ontrack = async (event) => {
-        hostTracks.push(event.track);
+        if (!hostTracks.includes(event.track)) {
+            hostTracks.push(event.track);
+        }
         console.log('Received track from host:', event.track.kind);
         
-        // Push the new track to all existing viewer connections
-        for (let [ws, pc] of viewerPCs.entries()) {
-            try {
-                pc.addTrack(event.track);
-                const offer = await pc.createOffer({ offerToReceiveVideo: true, offerToReceiveAudio: true });
-                await pc.setLocalDescription(offer);
-                ws.send(JSON.stringify({ type: 'webrtc-offer', sdp: pc.localDescription }));
-            } catch (err) {
-                console.error('Error renegotiating with viewer:', err);
+        // Push the new track to all existing authenticated viewers
+        for (let [sock, info] of connectedSockets.entries()) {
+            if (info.role === 'viewer' && info.authenticated) {
+                sock.send(JSON.stringify({ type: 'stream-status', active: true }));
+                await setupViewerPC(sock);
             }
         }
     };
@@ -186,6 +189,12 @@ async function handleHostOffer(ws, sdp) {
 }
 
 async function setupViewerPC(ws) {
+    const existingPC = viewerPCs.get(ws);
+    if (existingPC) {
+        existingPC.close();
+        viewerPCs.delete(ws);
+    }
+
     const pc = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
     });
@@ -218,7 +227,7 @@ function handleDisconnect(ws) {
         hostPC = null;
         hostTracks = [];
 
-        for (let [sock, info] of connectedSockets.entries()) {
+        for (let sock of connectedSockets.keys()) {
             if (sock !== ws) {
                 sock.send(JSON.stringify({ type: 'server-reset', message: 'Host disconnected' }));
                 sock.close(1008, 'Host disconnected');

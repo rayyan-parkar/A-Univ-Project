@@ -57,17 +57,37 @@ const CommunicationData = React.memo(function CommunicationData({ latestData }) 
             ctx.restore();
         }
     }), []);
+    const { backgroundColors, borderColors, pointRadii } = useMemo(() => {
+        const len = signalData.length;
+        const bg = [];
+        const border = [];
+        const radii = [];
+
+        for (let i = 0; i < len; i++) {
+            // Factor from 0 (oldest point) to 1 (newest point)
+            const factor = len > 1 ? i / (len - 1) : 1;
+            const alpha = (0.15 + 0.8 * factor).toFixed(3);
+            const radius = 3 + 2.5 * factor;
+
+            bg.push(`rgba(54, 162, 235, ${alpha})`);
+            border.push(`rgba(30, 64, 175, ${alpha})`);
+            radii.push(radius);
+        }
+
+        return { backgroundColors: bg, borderColors: border, pointRadii: radii };
+    }, [signalData]);
+
     const chartData = useMemo(() => ({
         datasets: [{
             label: 'Communication Points',
             data: signalData,
-            backgroundColor: 'rgba(54, 162, 235, 0.6)',
-            borderColor: 'rgba(54, 162, 235, 1)',
-            pointRadius: 4,
+            backgroundColor: backgroundColors,
+            borderColor: borderColors,
+            pointRadius: pointRadii,
             pointHoverRadius: 6,
             showLine: false,
         }]
-    }), [signalData]);
+    }), [signalData, backgroundColors, borderColors, pointRadii]);
 
     // Memoise tick callback to prevent recreation
     const hideZeroTickCallback = useCallback((value) => value === 0 ? '' : value, []);

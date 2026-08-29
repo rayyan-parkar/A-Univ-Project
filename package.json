@@ -9,7 +9,6 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "server": "node src/server.js",
-    "sender": "node src/sender.js",
     "mock-experiment": "node scripts/mock_experiment_writer.js"
   },
   "dependencies": {

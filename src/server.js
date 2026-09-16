@@ -65,6 +65,8 @@ function startLiveIngest(dirPath) {
     };
 
     liveIngestInterval = setInterval(() => {
+        const now = Date.now();
+
         // 1. Vibration
         const vibLines = loadLinesSafe('VibrationData.txt');
         const fpgaLines = loadLinesSafe('VibrationData_FPGA.txt');
@@ -73,7 +75,7 @@ function startLiveIngest(dirPath) {
             const v = parseFloats(vibLines[liveIndices.vibration]);
             const f = parseFloats(fpgaLines[liveIndices.vibration]);
             if (v.length > 0 && f.length > 0) {
-                broadcastPayload({ type: 'waveform', data: [v[0], f[0]] });
+                broadcastPayload({ type: 'waveform', data: [v[0], f[0]], timestamp: now });
             }
             liveIndices.vibration++;
         }
@@ -93,7 +95,7 @@ function startLiveIngest(dirPath) {
                     [m[0], m[1], m[2]], [m[3], m[4], m[5]], [m[6], m[7], m[8]],
                     [h[0], h[1], h[2]], [h[3], h[4], h[5]], [h[6], h[7], h[8]],
                 ];
-                broadcastPayload({ type: 'vector', data: vectors });
+                broadcastPayload({ type: 'vector', data: vectors, timestamp: now });
             }
             liveIndices.spherical++;
         }
@@ -110,7 +112,8 @@ function startLiveIngest(dirPath) {
             if (l.length >= 2 && m.length >= 2 && h.length >= 2) {
                 broadcastPayload({
                     type: 'communication',
-                    data: [[l[0], l[1]], [m[0], m[1]], [h[0], h[1]]]
+                    data: [[l[0], l[1]], [m[0], m[1]], [h[0], h[1]]],
+                    timestamp: now
                 });
             }
             liveIndices.communication++;

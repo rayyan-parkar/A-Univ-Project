@@ -95,15 +95,16 @@ export function useDataBroadcaster(socketRef, onLocalData) {
           onLocalData(payloads);
         }
 
+        const now = Date.now();
         if (isSocketOpen) {
           if (payloads.waveformData) {
-            socket.send(JSON.stringify({ type: 'waveform', data: payloads.waveformData }));
+            socket.send(JSON.stringify({ type: 'waveform', data: payloads.waveformData, timestamp: now }));
           }
           if (payloads.vectorData) {
-            socket.send(JSON.stringify({ type: 'vector', data: payloads.vectorData }));
+            socket.send(JSON.stringify({ type: 'vector', data: payloads.vectorData, timestamp: now }));
           }
           if (payloads.commData) {
-            socket.send(JSON.stringify({ type: 'communication', data: payloads.commData }));
+            socket.send(JSON.stringify({ type: 'communication', data: payloads.commData, timestamp: now }));
           }
         }
       }, 16);

@@ -14,7 +14,20 @@ import SetupScreen from './components/SetupScreen';
 
 function App() {
   const session = useExperimentSession();
-  const { socketRef, connectionStatus, sessionState, role, generatedPassword, authError, configureSession, authenticate, updateGraphData, graphData } = session;
+  const {
+    socketRef,
+    connectionStatus,
+    sessionState,
+    role,
+    generatedPassword,
+    authError,
+    configureSession,
+    authenticate,
+    updateGraphData,
+    syncDelayMs,
+    setSyncDelayMs,
+    graphData
+  } = session;
 
   const webrtc = useWebRTC(socketRef, role);
   const broadcaster = useDataBroadcaster(socketRef, updateGraphData);
@@ -173,6 +186,21 @@ function App() {
                     </button>
                   </div>
                 )}
+
+                <div className="host-sync-row">
+                  <span className="mode-label">A/V Sync Delay:</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="400"
+                    step="10"
+                    value={syncDelayMs}
+                    onChange={(e) => setSyncDelayMs(parseInt(e.target.value) || 0)}
+                    className="sync-slider"
+                  />
+                  <span className="sync-value-pill">{syncDelayMs} ms</span>
+                  <span className="sync-hint">(Syncs graphs with camera feed latency)</span>
+                </div>
               </div>
             )}
 

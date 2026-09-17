@@ -131,6 +131,24 @@ npm run build
 npm run preview
 ```
 
+### Private Tailscale deployment (phase 1)
+The production server serves both the built frontend and WebSocket signaling from one
+same-origin HTTP server. It binds to `127.0.0.1:8181` by default, so it is suitable
+for a private Tailscale Serve proxy. Override the bind address or port only when
+needed with bounded `HOST` and `PORT` environment variables.
+
+```bash
+npm run build
+npm run server
+tailscale serve --bg http://127.0.0.1:8181
+```
+
+Open the HTTPS URL printed by `tailscale serve status` from a device on the same
+tailnet. Tailscale terminates HTTPS/WSS; the Node server remains plain HTTP on
+localhost. The host can use that private HTTPS URL (or open `http://127.0.0.1:8181`
+directly on the server computer). Check `http://127.0.0.1:8181/healthz` when
+diagnosing startup.
+
 ---
 
 ## Project Structure

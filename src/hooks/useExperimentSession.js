@@ -81,10 +81,8 @@ export function useExperimentSession() {
 
     useEffect(() => {
         const connectWebSocket = () => {
-            const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-            const defaultWsUrl = isLocal
-                ? 'ws://127.0.0.1:8181'
-                : `wss://${window.location.hostname}:8181`;
+            const pageProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const defaultWsUrl = `${pageProtocol}//${window.location.host}/ws`;
 
             const wsUrl = import.meta.env.VITE_WS_URL || defaultWsUrl;
             const socket = new WebSocket(wsUrl);

@@ -26,7 +26,7 @@ const VibrationChart = React.memo(function VibrationChart({latestData, title}) {
                 return newData;
             });
         }
-    }, [latestData]);
+    }, [latestData, title]);
 
     // Memoise Y-axis range calculation
     const yRange = useMemo(() => {
@@ -113,7 +113,7 @@ const VibrationChart = React.memo(function VibrationChart({latestData, title}) {
             point: { radius: 0 }, // Ensure no points are drawn
             line: { borderWidth: 2 }
         }
-    }), [yRange, time]);
+    }), [yRange]);
     return (
         <div className='vibration-chart'>
             <h2>{title}</h2>

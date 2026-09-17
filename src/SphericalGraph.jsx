@@ -9,7 +9,7 @@ function Vector({ start, end, color }) {
     const points = [start, end];
     const geom = new THREE.BufferGeometry().setFromPoints(points);
     return geom;
-  }, [start.x, start.y, start.z, end.x, end.y, end.z]);
+  }, [start, end]);
 
   useEffect(() => {
     geometryRef.current = geometry;
@@ -35,7 +35,7 @@ function Vector({ start, end, color }) {
 }
 
 // Wireframe sphere that rotates around its own axis
-function WireframeSphere({ }) {
+function WireframeSphere() {
   const meshRef = useRef();
 
   useFrame((_, delta) => {

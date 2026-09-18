@@ -121,8 +121,8 @@ To test live file appending without modifying or corrupting sample datasets, run
 ```bash
 npm run mock-experiment
 ```
-* Creates a temporary `test_experiment_data/` folder with all 8 required files and continuously appends live measurements.
-* Point the Host GUI directory field to `test_experiment_data/`.
+* Creates a unique temporary directory in the operating system temp area with all 8 required files and continuously appends live measurements. The absolute path is printed in the terminal.
+* Point the Host GUI directory field to the printed temporary directory.
 * Press `Ctrl+C` to stop; the temporary directory is automatically deleted and cleaned up.
 
 ### Production Build

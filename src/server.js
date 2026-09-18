@@ -7,6 +7,8 @@ import { fileURLToPath } from 'url';
 import { WebSocketServer, WebSocket } from 'ws';
 import wrtc from '@roamhq/wrtc';
 import dotenv from 'dotenv';
+import { LiveIngestEngine, LIVE_STATUS } from './liveIngest.js';
+import { validateTelemetryFrame } from './telemetryProtocol.js';
 
 dotenv.config({ quiet: true });
 
@@ -28,12 +30,13 @@ const MAX_CLAIM_ATTEMPTS = 5;
 const MAX_AUTH_ATTEMPTS = 5;
 const MAX_PENDING_ICE = 64;
 const MAX_TELEMETRY_TIMESTAMP = 1e15;
+export const TELEMETRY_HIGH_WATER_BYTES = 512 * 1024;
 const OPEN = WebSocket.OPEN;
 
 const MESSAGE_TYPES = new Set([
     'claim-host', 'configure', 'auth', 'start-live-ingest', 'stop-live-ingest',
     'stop-webrtc-stream', 'webrtc-restart-request', 'webrtc-offer', 'webrtc-answer',
-    'webrtc-ice', 'waveform', 'vector', 'communication'
+    'webrtc-ice', 'waveform', 'vector', 'communication', 'telemetry-frame'
 ]);
 
 const MIME_TYPES = {
@@ -197,6 +200,12 @@ export function validateMessage(message) {
             if (telemetryError) return { ok: false, code: 'invalid-telemetry', message: telemetryError };
             break;
         }
+        case 'telemetry-frame': {
+            const telemetryError = validateTelemetryFrame(message);
+            if (telemetryError) return { ok: false, code: 'invalid-telemetry-frame', message: telemetryError };
+            if (Math.abs(message.timestamp) > MAX_TELEMETRY_TIMESTAMP) return { ok: false, code: 'invalid-telemetry-frame', message: 'timestamp must be finite and bounded' };
+            break;
+        }
         default: break;
     }
     return { ok: true };
@@ -241,19 +250,27 @@ export function createServer({ staticDir = DEFAULT_STATIC_DIR, logger = console,
     const pendingPeerTasks = new Set();
     let hostPC = null;
     let hostTracks = [];
-    let liveIngestInterval = null;
-    let liveIndices = { spherical: 0, vibration: 0, communication: 0 };
+    let liveIngestEngine = null;
+    let liveIngestDirectory = null;
     let hostSocket = null;
     let hostReconnectTimer = null;
     let hostPeerGeneration = 0;
     let heartbeatTimer = null;
     let isClosing = false;
+    let latestTelemetryFrame = null;
     const scheduledTimers = new Set();
     const schedule = (callback, delay) => { const timer = setTimeout(() => { scheduledTimers.delete(timer); callback(); }, delay); scheduledTimers.add(timer); return timer; };
     const clearScheduled = timer => { if (timer) { clearTimeout(timer); scheduledTimers.delete(timer); } };
     const logError = (message, error) => logger.error(message, error?.message || error || 'unknown error');
-    const safeSend = (ws, payload) => {
+    const isTelemetryPayload = payload => {
+        if (typeof payload === 'string') { try { const parsed = JSON.parse(payload); return isTelemetryPayload(parsed); } catch { return false; } }
+        return payload?.type === 'telemetry-frame' || ['waveform', 'vector', 'communication'].includes(payload?.type);
+    };
+    // Telemetry is visualization state: stale frames may be dropped at this bound,
+    // while control, authentication, signaling, and status messages are never gated.
+    const safeSend = (ws, payload, telemetry = isTelemetryPayload(payload)) => {
         if (!ws || ws.readyState !== OPEN || isClosing) return false;
+        if (telemetry && ws.bufferedAmount > TELEMETRY_HIGH_WATER_BYTES) return false;
         try { ws.send(typeof payload === 'string' ? payload : JSON.stringify(payload), error => { if (error) logError('WebSocket send failed', error); }); return true; } catch (error) { logError('WebSocket send failed', error); return false; }
     };
     const protocolError = (ws, code, message) => safeSend(ws, { type: 'protocol-error', code, message });
@@ -287,22 +304,42 @@ export function createServer({ staticDir = DEFAULT_STATIC_DIR, logger = console,
         for (const [sock, pc] of viewerPCs.entries()) { viewerPCs.delete(sock); clearIceQueue(sock); safeClosePeerConnection(pc); }
         if (hadMedia) notifyStreamStatus(false);
     }
-    function stopLiveIngest() { if (liveIngestInterval) { clearInterval(liveIngestInterval); liveIngestInterval = null; logger.info('Live experiment ingest stopped.'); } }
-    function broadcastPayload(message) { for (const [sock, info] of connectedSockets.entries()) if (info.authenticated && (info.role === 'host' || info.role === 'viewer')) safeSend(sock, message); }
-    function startLiveIngest(dirPath) {
-        stopLiveIngest(); const resolvedDir = path.resolve(process.cwd(), dirPath || './src/data'); liveIndices = { spherical: 0, vibration: 0, communication: 0 }; logger.info(`Starting live experiment ingest from: ${resolvedDir}`);
-        const parseFloats = line => line ? line.split(/\s+/).map(Number).filter(Number.isFinite) : [];
-        const loadLinesSafe = filename => { try { return fs.readFileSync(path.join(resolvedDir, filename), 'utf8').split(/\r?\n/).map(line => line.trim()).filter(Boolean); } catch { return []; } };
-        liveIngestInterval = setInterval(() => {
-            try {
-                const now = Date.now(); const vibLines = loadLinesSafe('VibrationData.txt'); const fpgaLines = loadLinesSafe('VibrationData_FPGA.txt');
-                if (liveIndices.vibration < Math.min(vibLines.length, fpgaLines.length)) { const v = parseFloats(vibLines[liveIndices.vibration]); const f = parseFloats(fpgaLines[liveIndices.vibration]); if (v.length > 0 && f.length > 0) broadcastPayload({ type: 'waveform', data: [v[0], f[0]], timestamp: now }); liveIndices.vibration++; }
-                const sLow = loadLinesSafe('SphericalData_low.txt'); const sMed = loadLinesSafe('SphericalData_medium.txt'); const sHigh = loadLinesSafe('SphericalData_high.txt');
-                if (liveIndices.spherical < Math.min(sLow.length, sMed.length, sHigh.length)) { const l = parseFloats(sLow[liveIndices.spherical]); const m = parseFloats(sMed[liveIndices.spherical]); const h = parseFloats(sHigh[liveIndices.spherical]); if (l.length >= 9 && m.length >= 9 && h.length >= 9) broadcastPayload({ type: 'vector', data: [[l[0], l[1], l[2]], [l[3], l[4], l[5]], [l[6], l[7], l[8]], [m[0], m[1], m[2]], [m[3], m[4], m[5]], [m[6], m[7], m[8]], [h[0], h[1], h[2]], [h[3], h[4], h[5]], [h[6], h[7], h[8]]], timestamp: now }); liveIndices.spherical++; }
-                const cLow = loadLinesSafe('CommunicationData_low.txt'); const cMed = loadLinesSafe('CommunicationData_medium.txt'); const cHigh = loadLinesSafe('CommunicationData_high.txt');
-                if (liveIndices.communication < Math.min(cLow.length, cMed.length, cHigh.length)) { const l = parseFloats(cLow[liveIndices.communication]); const m = parseFloats(cMed[liveIndices.communication]); const h = parseFloats(cHigh[liveIndices.communication]); if (l.length >= 2 && m.length >= 2 && h.length >= 2) broadcastPayload({ type: 'communication', data: [[l[0], l[1]], [m[0], m[1]], [h[0], h[1]]], timestamp: now }); liveIndices.communication++; }
-            } catch (error) { logError('Live experiment ingest tick failed', error); }
-        }, 16);
+    function broadcastPayload(message) {
+        if (message?.type === 'telemetry-frame') latestTelemetryFrame = message;
+        const raw = JSON.stringify(message);
+        const telemetry = isTelemetryPayload(message);
+        for (const [sock, info] of connectedSockets.entries()) if (info.authenticated && (info.role === 'host' || info.role === 'viewer')) safeSend(sock, raw, telemetry);
+    }
+    function broadcastLiveStatus(status, detail) {
+        if (!hostSocket) return;
+        const message = { type: 'live-ingest-status', status, ...(typeof detail === 'string' ? { detail } : {}) };
+        safeSend(hostSocket, message, false);
+    }
+    async function stopLiveIngest({ pause = false } = {}) {
+        if (!liveIngestEngine) return;
+        if (pause) { liveIngestEngine.pause(); broadcastLiveStatus(LIVE_STATUS.PAUSED); return; }
+        await liveIngestEngine.stop();
+        liveIngestEngine = null;
+        liveIngestDirectory = null;
+        latestTelemetryFrame = null;
+    }
+    async function startLiveIngest(dirPath) {
+        const requestedDirectory = dirPath || './src/data';
+        if (liveIngestEngine && liveIngestDirectory !== path.resolve(process.cwd(), requestedDirectory)) await stopLiveIngest();
+        if (!liveIngestEngine) {
+            liveIngestEngine = new LiveIngestEngine({
+                onFrame: frame => broadcastPayload(frame),
+                onStatus: event => broadcastLiveStatus(event.status, event.status === LIVE_STATUS.ERROR ? 'Live ingest encountered a read error' : undefined),
+                onWarning: event => (logger.warn || logger.error || (() => {}))(`Live ingest warning: ${event.message}`)
+            });
+        }
+        try {
+            const result = await liveIngestEngine.start(requestedDirectory);
+            liveIngestDirectory = result.directory;
+        } catch (error) {
+            broadcastLiveStatus(LIVE_STATUS.ERROR, 'Live data directory or files are not available');
+            throw error;
+        }
     }
     async function setupViewerPC(ws) {
         const info = connectedSockets.get(ws); if (!info || info.role !== 'viewer' || !info.authenticated || ws.readyState !== OPEN || hostTracks.length === 0) return;
@@ -349,13 +386,14 @@ export function createServer({ staticDir = DEFAULT_STATIC_DIR, logger = console,
         catch (error) { if (hostPC === pc) stopHostMedia(); else { clearIceQueue(ws); stopHostTracks(); safeClosePeerConnection(pc); } throw error; }
     }
     function resetSession(reason = 'Host disconnected') {
-        if (hostReconnectTimer) { clearScheduled(hostReconnectTimer); hostReconnectTimer = null; } stopLiveIngest(); stopHostMedia(); sessionState = 'IDLE'; hostSocket = null; hostConfig = { maxClients: 3, password: '', whitelist: [] };
+        if (hostReconnectTimer) { clearScheduled(hostReconnectTimer); hostReconnectTimer = null; } void stopLiveIngest(); stopHostMedia(); sessionState = 'IDLE'; hostSocket = null; hostConfig = { maxClients: 3, password: '', whitelist: [] };
+        latestTelemetryFrame = null;
         for (const [sock] of connectedSockets.entries()) { safeSend(sock, { type: 'server-reset', message: reason }); try { sock.close(1008, reason); } catch { /* closed */ } }
         connectedSockets.clear(); viewerPCs.clear(); iceQueues.clear(); messageQueues.clear();
     }
     function handleDisconnect(ws) {
         const client = connectedSockets.get(ws); clearIceQueue(ws); messageQueues.delete(ws); if (!client) return; connectedSockets.delete(ws); const viewerPC = viewerPCs.get(ws); viewerPCs.delete(ws); if (viewerPC) safeClosePeerConnection(viewerPC);
-        if (client.role === 'host' && hostSocket === ws) { hostSocket = null; stopLiveIngest(); stopHostMedia(); if (!isClosing) { if (hostReconnectTimer) clearScheduled(hostReconnectTimer); hostReconnectTimer = schedule(() => resetSession('Host disconnected'), hostReconnectGraceMs); } }
+        if (client.role === 'host' && hostSocket === ws) { hostSocket = null; void stopLiveIngest({ pause: true }); stopHostMedia(); if (!isClosing) { if (hostReconnectTimer) clearScheduled(hostReconnectTimer); hostReconnectTimer = schedule(() => resetSession('Host disconnected'), hostReconnectGraceMs); } }
     }
     function ipAllowed(info) { return hostConfig.whitelist.length === 0 || hostConfig.whitelist.includes(info.ip); }
     function promoteWaitingClients() {
@@ -365,11 +403,11 @@ export function createServer({ staticDir = DEFAULT_STATIC_DIR, logger = console,
         }
     }
     function authorize(client, type) {
-        const allowed = { host: new Set(['configure', 'start-live-ingest', 'stop-live-ingest', 'stop-webrtc-stream', 'webrtc-offer', 'webrtc-ice', 'waveform', 'vector', 'communication']), viewer: new Set(['auth', 'webrtc-answer', 'webrtc-ice', 'webrtc-restart-request']), waiting: new Set(['claim-host']) };
+        const allowed = { host: new Set(['configure', 'start-live-ingest', 'stop-live-ingest', 'stop-webrtc-stream', 'webrtc-offer', 'webrtc-ice', 'waveform', 'vector', 'communication', 'telemetry-frame']), viewer: new Set(['auth', 'webrtc-answer', 'webrtc-ice', 'webrtc-restart-request']), waiting: new Set(['claim-host']) };
         if (type === 'claim-host') return null; if (!allowed[client.role]?.has(type)) return 'Message is not allowed for this connection role';
         if (type === 'configure' && (sessionState !== 'CONFIGURING' && sessionState !== 'ACTIVE' || !client.authenticated || client.role !== 'host')) return 'Session is not configurable';
         if (type === 'auth' && (sessionState !== 'ACTIVE' || client.authenticated || client.authLocked)) return 'Authentication is not allowed now';
-        if (['start-live-ingest', 'stop-live-ingest', 'webrtc-offer', 'waveform', 'vector', 'communication', 'stop-webrtc-stream'].includes(type) && (sessionState !== 'ACTIVE' || !client.authenticated || client.role !== 'host' || hostSocket === null)) return 'Session is not active';
+        if (['start-live-ingest', 'stop-live-ingest', 'webrtc-offer', 'waveform', 'vector', 'communication', 'telemetry-frame', 'stop-webrtc-stream'].includes(type) && (sessionState !== 'ACTIVE' || !client.authenticated || client.role !== 'host' || hostSocket === null)) return 'Session is not active';
         if (['webrtc-answer', 'webrtc-ice', 'webrtc-restart-request'].includes(type) && (!client.authenticated || sessionState !== 'ACTIVE')) return 'Authentication is required';
         return null;
     }
@@ -387,8 +425,8 @@ export function createServer({ staticDir = DEFAULT_STATIC_DIR, logger = console,
             if (parsed.type === 'configure') {
                 hostConfig = { maxClients: boundedInteger(parsed.maxClients, 1, 10), password: parsed.password || generatePassword(), whitelist: normalizeWhitelist(parsed.whitelist || []) }; sessionState = 'ACTIVE'; safeSend(ws, { type: 'config-success', password: hostConfig.password });
                 promoteWaitingClients();
-            } else if (parsed.type === 'start-live-ingest') startLiveIngest(parsed.dir);
-            else if (parsed.type === 'stop-live-ingest') stopLiveIngest();
+            } else if (parsed.type === 'start-live-ingest') await startLiveIngest(parsed.dir);
+            else if (parsed.type === 'stop-live-ingest') { await stopLiveIngest(); broadcastLiveStatus(LIVE_STATUS.STOPPED); }
             else if (parsed.type === 'stop-webrtc-stream') stopHostMedia();
             else if (parsed.type === 'webrtc-restart-request') {
                 if (Date.now() - (client.lastRestartAt || 0) < 500) { protocolError(ws, 'restart-rate-limited', 'Stream restart is temporarily rate limited'); return; }
@@ -409,11 +447,17 @@ export function createServer({ staticDir = DEFAULT_STATIC_DIR, logger = console,
                     return;
                 }
                 const viewers = [...connectedSockets.values()].filter(item => item.role === 'viewer' && item.authenticated); if (viewers.length >= hostConfig.maxClients) { safeSend(ws, { type: 'auth-fail', message: 'Room is full' }); const timer = schedule(() => { try { ws.close(1008, 'Full'); } catch { /* closed */ } }, 100); void timer; return; }
-                client.authenticated = true; client.authAttempts = 0; client.authLocked = false; safeSend(ws, { type: 'auth-success' }); if (hostTracks.length > 0) { await setupViewerPC(ws); safeSend(ws, { type: 'stream-status', active: true }); } else safeSend(ws, { type: 'stream-status', active: false });
+                client.authenticated = true; client.authAttempts = 0; client.authLocked = false; safeSend(ws, { type: 'auth-success' });
+                if (latestTelemetryFrame) safeSend(ws, latestTelemetryFrame, true);
+                if (hostTracks.length > 0) { await setupViewerPC(ws); safeSend(ws, { type: 'stream-status', active: true }); } else safeSend(ws, { type: 'stream-status', active: false });
             } else if (parsed.type === 'webrtc-offer') await handleHostOffer(ws, parsed.sdp);
             else if (parsed.type === 'webrtc-answer') { const pc = viewerPCs.get(ws); if (!pc) throw new Error('No viewer peer connection exists'); await pc.setRemoteDescription(new RTCSessionDescription(parsed.sdp)); const state = iceQueues.get(ws); if (state && state.pc === pc) { state.remoteDescriptionSet = true; await flushIceQueue(ws); } }
             else if (parsed.type === 'webrtc-ice') { if (client.role === 'host' && hostSocket !== ws) return; await addOrQueueIce(ws, parsed.candidate); }
-            else if (['waveform', 'vector', 'communication'].includes(parsed.type)) { const raw = JSON.stringify(parsed); for (const [sock, info] of connectedSockets.entries()) if (sock !== ws && info.role === 'viewer' && info.authenticated) safeSend(sock, raw); }
+            else if (['waveform', 'vector', 'communication', 'telemetry-frame'].includes(parsed.type)) {
+                if (parsed.type === 'telemetry-frame') latestTelemetryFrame = parsed;
+                const raw = JSON.stringify(parsed);
+                for (const [sock, info] of connectedSockets.entries()) if (sock !== ws && info.role === 'viewer' && info.authenticated) safeSend(sock, raw, true);
+            }
         } catch (error) { logError(`Failed to process ${parsed.type}`, error); protocolError(ws, parsed.type.startsWith('webrtc-') ? 'invalid-webrtc' : 'server-error', error?.message === 'ICE candidate queue is full' ? 'ICE candidate queue is full' : 'Request could not be completed'); }
     }
     const httpServer = http.createServer((request, response) => {
@@ -436,7 +480,7 @@ export function createServer({ staticDir = DEFAULT_STATIC_DIR, logger = console,
     });
     heartbeatTimer = setInterval(() => { for (const [ws, info] of connectedSockets.entries()) { if (!info.isAlive || Date.now() - info.lastPongAt > heartbeatTimeoutMs) { try { ws.terminate(); } catch { /* closed */ } continue; } info.isAlive = false; try { if (ws.readyState === OPEN) ws.ping(); } catch { try { ws.terminate(); } catch { /* closed */ } } } }, heartbeatIntervalMs);
     async function close() {
-        if (isClosing) return; isClosing = true; if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; } if (hostReconnectTimer) { clearScheduled(hostReconnectTimer); hostReconnectTimer = null; } for (const timer of scheduledTimers) clearScheduled(timer); stopLiveIngest(); stopHostMedia(); await Promise.allSettled([...pendingPeerTasks]); for (const ws of connectedSockets.keys()) try { ws.close(1001, 'Server shutting down'); } catch { /* closed */ } connectedSockets.clear(); viewerPCs.clear(); iceQueues.clear(); messageQueues.clear(); await new Promise(resolve => wss.close(() => resolve())); if (httpServer.listening) await new Promise(resolve => httpServer.close(() => resolve()));
+        if (isClosing) return; isClosing = true; if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; } if (hostReconnectTimer) { clearScheduled(hostReconnectTimer); hostReconnectTimer = null; } for (const timer of scheduledTimers) clearScheduled(timer); await stopLiveIngest(); stopHostMedia(); await Promise.allSettled([...pendingPeerTasks]); for (const ws of connectedSockets.keys()) try { ws.close(1001, 'Server shutting down'); } catch { /* closed */ } connectedSockets.clear(); viewerPCs.clear(); iceQueues.clear(); messageQueues.clear(); await new Promise(resolve => wss.close(() => resolve())); if (httpServer.listening) await new Promise(resolve => httpServer.close(() => resolve()));
     }
     return { httpServer, wss, close, getState: () => ({ sessionState, hostConfig: { ...hostConfig, whitelist: [...hostConfig.whitelist] }, connectedClients: connectedSockets.size }), announceHostToken: () => generatedHostToken };
 }

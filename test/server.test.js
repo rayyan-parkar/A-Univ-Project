@@ -173,6 +173,22 @@ test('validates bounded telemetry and signaling fields before handling them', ()
     assert.equal(validateMessage({ type: 'webrtc-ice', candidate: { candidate: 'hostile' } }).ok, false);
 });
 
+test('validates and relays one complete application-owned telemetry frame', async () => {
+    const frame = {
+        type: 'telemetry-frame', frameId: 4, timestamp: Date.now(), waveform: [1, 2],
+        vector: Array.from({ length: 9 }, () => [0, 0, 0]), communication: [[1, 2], [3, 4], [5, 6]]
+    };
+    assert.equal(validateMessage(frame).ok, true);
+    assert.equal(validateMessage({ ...frame, frameId: -1 }).ok, false);
+    assert.equal(validateMessage({ ...frame, timestamp: 1e16 }).ok, false);
+    const { url } = await startTestServer();
+    const host = await connect(url); await host.next(); send(host.ws, { type: 'claim-host', token: '0123456789abcdef' }); await host.next();
+    send(host.ws, { type: 'configure', maxClients: 2, password: 'secret', whitelist: [] }); await host.next();
+    const viewer = await connect(url); await viewer.next(); send(viewer.ws, { type: 'auth', password: 'secret' }); await viewer.next(); await viewer.next();
+    send(host.ws, frame); assert.deepEqual(await viewer.next(), frame);
+    host.ws.close(); viewer.ws.close();
+});
+
 test('normalizes IP allowlists and never exposes the host token in state or health', async () => {
     assert.equal(normalizeIp('127.000.000.001'), '127.0.0.1');
     assert.equal(normalizeIp('::ffff:127.0.0.1'), '127.0.0.1');
@@ -240,4 +256,22 @@ test('caps repeated viewer password failures and reports each failure', async ()
     for (let attempt = 0; attempt < 5; attempt += 1) { send(viewer.ws, { type: 'auth', password: 'wrong' }); assert.deepEqual(await viewer.next(), { type: 'auth-fail', message: 'Invalid password' }); }
     await new Promise((resolve, reject) => { const timer = setTimeout(() => reject(new Error('viewer was not closed after auth failures')), 1000); viewer.ws.once('close', () => { clearTimeout(timer); resolve(); }); });
     host.ws.close();
+});
+
+test('provides latest telemetry frame snapshot to late-joining authenticated viewers', async () => {
+    const frame = {
+        type: 'telemetry-frame', frameId: 99, timestamp: Date.now(), waveform: [3.5, 4.5],
+        vector: Array.from({ length: 9 }, () => [1, 2, 3]), communication: [[1, 2], [3, 4], [5, 6]]
+    };
+    const { url } = await startTestServer();
+    const host = await connect(url); await host.next();
+    send(host.ws, { type: 'claim-host', token: '0123456789abcdef' }); await host.next();
+    send(host.ws, { type: 'configure', maxClients: 2, password: 'secret', whitelist: [] }); await host.next();
+    send(host.ws, frame);
+    // Late-joining viewer connects after frame was already sent
+    const lateViewer = await connect(url); await lateViewer.next();
+    send(lateViewer.ws, { type: 'auth', password: 'secret' });
+    assert.deepEqual(await lateViewer.next(), { type: 'auth-success' });
+    assert.deepEqual(await lateViewer.next(), frame);
+    host.ws.close(); lateViewer.ws.close();
 });

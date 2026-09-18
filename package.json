@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "test": "node --test test/server.test.js",
+    "test": "node --test test/*.test.js",
     "preview": "vite preview",
     "server": "node src/server.js",
     "mock-experiment": "node scripts/mock_experiment_writer.js"

@@ -9,7 +9,7 @@ import './App.css';
 
 import { useExperimentSession } from './hooks/useExperimentSession';
 import { useWebRTC } from './hooks/useWebRTC';
-import { useDataBroadcaster, REQUIRED_FILES } from './hooks/useDataBroadcaster';
+import { useDataBroadcaster } from './hooks/useDataBroadcaster';
 import SetupScreen from './components/SetupScreen';
 
 function App() {
@@ -28,11 +28,12 @@ function App() {
     updateGraphData,
     syncDelayMs,
     setSyncDelayMs,
-    graphData
+    graphData,
+    liveIngestStatus
   } = session;
 
   const webrtc = useWebRTC(socketRef, role, socketEpoch);
-  const broadcaster = useDataBroadcaster(socketRef, updateGraphData, socketEpoch, sessionState === 'ACTIVE' && role === 'host');
+  const broadcaster = useDataBroadcaster(socketRef, updateGraphData, socketEpoch, sessionState === 'ACTIVE' && role === 'host', liveIngestStatus);
 
   const videoRef = useRef(null);
 
@@ -104,7 +105,7 @@ function App() {
             </span>
           )}
           {role === 'host' && (
-            <span style={{ marginLeft: '20px', color: broadcaster.isBroadcasting ? '#00ff00' : '#888888' }}>
+              <span style={{ marginLeft: '20px', color: broadcaster.isBroadcasting ? '#00ff00' : '#888888' }}>
               Data Engine: {broadcaster.statusMessage}
             </span>
           )}
@@ -128,7 +129,7 @@ function App() {
                     </>
                   )}
 
-                  {!broadcaster.isBroadcasting ? (
+                  {!broadcaster.isBroadcasting && !broadcaster.isStarting ? (
                     <button className="host-btn data-start-btn" onClick={broadcaster.startBroadcasting}>
                       Start Data Broadcast
                     </button>
@@ -148,7 +149,7 @@ function App() {
                       value="debug"
                       checked={broadcaster.broadcastMode === 'debug'}
                       onChange={() => broadcaster.setBroadcastMode('debug')}
-                      disabled={broadcaster.isBroadcasting}
+                      disabled={broadcaster.isBroadcasting || broadcaster.isStarting}
                     />
                     Debug / Simulation (In-Memory)
                   </label>
@@ -159,7 +160,7 @@ function App() {
                       value="live"
                       checked={broadcaster.broadcastMode === 'live'}
                       onChange={() => broadcaster.setBroadcastMode('live')}
-                      disabled={broadcaster.isBroadcasting}
+                      disabled={broadcaster.isBroadcasting || broadcaster.isStarting}
                     />
                     📂 Live Experiment Files
                   </label>
@@ -173,22 +174,14 @@ function App() {
                       className="host-dir-input"
                       value={broadcaster.liveDir}
                       onChange={(e) => broadcaster.setLiveDir(e.target.value)}
-                      disabled={broadcaster.isBroadcasting}
-                      placeholder="./test_experiment_data"
+                      disabled={broadcaster.isBroadcasting || broadcaster.isStarting}
+                      placeholder="Absolute path printed by mock_experiment_writer"
                     />
-                    <button
-                      type="button"
-                      className={`host-preset-btn ${broadcaster.liveDir === './test_experiment_data' ? 'active' : ''}`}
-                      onClick={() => broadcaster.setLiveDir('./test_experiment_data')}
-                      disabled={broadcaster.isBroadcasting}
-                    >
-                      🧪 test_experiment_data
-                    </button>
                     <button
                       type="button"
                       className={`host-preset-btn ${broadcaster.liveDir === './src/data' ? 'active' : ''}`}
                       onClick={() => broadcaster.setLiveDir('./src/data')}
-                      disabled={broadcaster.isBroadcasting}
+                      disabled={broadcaster.isBroadcasting || broadcaster.isStarting}
                     >
                       📦 src/data
                     </button>

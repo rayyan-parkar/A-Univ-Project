@@ -1,7 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { isTelemetryFrame } from '../telemetryProtocol';
 
 export const RECONNECT_BASE_MS = 250;
 export const RECONNECT_MAX_MS = 8000;
+// At the maximum 400ms delay this is several seconds of latest-state history;
+// insertion is capped so background tabs cannot accumulate unbounded frames.
+export const MAX_DELAY_QUEUE = 240;
 export function reconnectDelay(attempt, random = Math.random()) {
     const exponent = Math.min(Math.max(0, attempt), 8);
     const capped = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * (2 ** exponent));
@@ -28,6 +32,8 @@ export function useExperimentSession() {
     const [vectorData2, setVectorData2] = useState([]);
     const [vectorData3, setVectorData3] = useState([]);
     const [communicationData, setCommunicationData] = useState([]);
+    const [latestFrame, setLatestFrame] = useState(null);
+    const [liveIngestStatus, setLiveIngestStatus] = useState(null);
     const [syncDelayMs, setSyncDelayMs] = useState(100);
     const syncDelayRef = useRef(100);
     const queueRef = useRef([]);
@@ -44,11 +50,18 @@ export function useExperimentSession() {
     // The lazy initializer above is intentionally resolved once for this page lifetime.
     if (typeof hostTokenRef.current === 'function') hostTokenRef.current = hostTokenRef.current();
 
-    useEffect(() => { syncDelayRef.current = syncDelayMs; }, [syncDelayMs]);
+    useEffect(() => { syncDelayRef.current = syncDelayMs; queueRef.current = []; }, [syncDelayMs]);
 
     const applyPacket = useCallback((parsed) => {
         if (!parsed) return;
-        if (parsed.type === 'waveform' && Array.isArray(parsed.data) && parsed.data.length >= 2) {
+        if (isTelemetryFrame(parsed)) {
+            setLatestFrame({ frameId: parsed.frameId, timestamp: parsed.timestamp });
+            setVibrationValue(parsed.waveform[0]); setVibrationFPGA(parsed.waveform[1]);
+            const colors = ['#ff4500', '#009908', '#8a2be2'];
+            const createGraphData = startIdx => parsed.vector.slice(startIdx, startIdx + 3).map((item, index) => ({ x: item[0], y: item[1], z: item[2], color: colors[index] }));
+            setVectorData1(createGraphData(0)); setVectorData2(createGraphData(3)); setVectorData3(createGraphData(6));
+            setCommunicationData(parsed.communication);
+        } else if (parsed.type === 'waveform' && Array.isArray(parsed.data) && parsed.data.length >= 2) {
             setVibrationValue(Number.parseFloat(parsed.data[0])); setVibrationFPGA(Number.parseFloat(parsed.data[1]));
         } else if (parsed.type === 'vector' && Array.isArray(parsed.data) && parsed.data.length >= 9) {
             const colors = ['#ff4500', '#009908', '#8a2be2'];
@@ -61,8 +74,9 @@ export function useExperimentSession() {
         let animId;
         const flushQueue = () => {
             const now = Date.now(); const queue = queueRef.current;
-            while (queue.length > 0 && now >= queue[0].targetRenderTime) applyPacket(queue.shift().packet);
-            if (queue.length > 200) queueRef.current = queue.slice(-50);
+            let latestDue = null;
+            while (queue.length > 0 && now >= queue[0].targetRenderTime) latestDue = queue.shift().packet;
+            if (latestDue) applyPacket(latestDue);
             animId = requestAnimationFrame(flushQueue);
         };
         animId = requestAnimationFrame(flushQueue);
@@ -143,15 +157,20 @@ export function useExperimentSession() {
                 }
                 else if (parsed.type === 'auth-success') { setAuthError(''); setSessionState('ACTIVE'); setRole('viewer'); }
                 else if (parsed.type === 'auth-fail') setAuthError(parsed.message || 'Authentication failed');
-                else if (parsed.type === 'server-reset') { setRole('waiting'); setSessionState('IDLE'); setAuthError('The session ended. Waiting for a host.'); }
-                else if (parsed.type === 'waveform' || parsed.type === 'vector' || parsed.type === 'communication') {
-                    if (syncDelayRef.current <= 0) applyPacket(parsed); else queueRef.current.push({ packet: parsed, targetRenderTime: Date.now() + syncDelayRef.current });
+                else if (parsed.type === 'server-reset') { queueRef.current = []; setLiveIngestStatus(null); setRole('waiting'); setSessionState('IDLE'); setAuthError('The session ended. Waiting for a host.'); }
+                else if (parsed.type === 'live-ingest-status') setLiveIngestStatus(parsed);
+                else if (isTelemetryFrame(parsed) || parsed.type === 'waveform' || parsed.type === 'vector' || parsed.type === 'communication') {
+                    if (syncDelayRef.current <= 0) applyPacket(parsed);
+                    else {
+                        if (queueRef.current.length >= MAX_DELAY_QUEUE) queueRef.current.splice(0, Math.ceil(MAX_DELAY_QUEUE / 4));
+                        queueRef.current.push({ packet: parsed, targetRenderTime: Date.now() + syncDelayRef.current });
+                    }
                 }
             };
             socket.onerror = () => { if (socketGenerationRef.current === generation) setConnectionStatus('Connection error; retrying...'); };
             socket.onclose = () => {
                 if (socketGenerationRef.current !== generation) return;
-                socketRef.current = null; setSocketEpoch(epoch => epoch + 1); setSessionState('DISCONNECTED'); scheduleReconnect();
+                socketRef.current = null; queueRef.current = []; setLiveIngestStatus(null); setSocketEpoch(epoch => epoch + 1); setSessionState('DISCONNECTED'); scheduleReconnect();
             };
         };
         connect();
@@ -160,14 +179,17 @@ export function useExperimentSession() {
 
     const updateGraphData = useCallback((payloads) => {
         if (!payloads) return;
-        if (payloads.waveformData) applyPacket({ type: 'waveform', data: payloads.waveformData });
-        if (payloads.vectorData) applyPacket({ type: 'vector', data: payloads.vectorData });
-        if (payloads.commData) applyPacket({ type: 'communication', data: payloads.commData });
+        if (isTelemetryFrame(payloads)) applyPacket(payloads);
+        else {
+            if (payloads.waveformData) applyPacket({ type: 'waveform', data: payloads.waveformData });
+            if (payloads.vectorData) applyPacket({ type: 'vector', data: payloads.vectorData });
+            if (payloads.commData) applyPacket({ type: 'communication', data: payloads.commData });
+        }
     }, [applyPacket]);
 
     return {
         socketRef, socketEpoch, connectionStatus, sessionState, role, generatedPassword, authError,
-        configureSession, claimHost, authenticate, send, updateGraphData, syncDelayMs, setSyncDelayMs,
+        configureSession, claimHost, authenticate, send, updateGraphData, syncDelayMs, setSyncDelayMs, latestFrame, liveIngestStatus,
         graphData: { vibrationValue, vibrationFPGA, vectorData1, vectorData2, vectorData3, communicationData }
     };
 }

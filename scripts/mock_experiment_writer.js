@@ -1,15 +1,12 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 
-const outDir = path.resolve(process.cwd(), 'test_experiment_data');
+const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'a-univ-experiment-'));
 
 console.log('🧪 Starting Mock Experiment Data Writer...');
 console.log(`📁 Test directory: ${outDir}`);
 
-// Ensure clean directory
-if (fs.existsSync(outDir)) {
-  fs.rmSync(outDir, { recursive: true, force: true });
-}
 fs.mkdirSync(outDir, { recursive: true });
 
 const files = {
@@ -28,11 +25,10 @@ let interval = null;
 // Cleanup on exit
 function cleanup() {
   if (interval) clearInterval(interval);
-  console.log('\n🧹 Cleaning up test_experiment_data/ directory...');
+  console.log(`\n🧹 Cleaning up ${outDir} (files created by this process only)...`);
   try {
-    if (fs.existsSync(outDir)) {
-      fs.rmSync(outDir, { recursive: true, force: true });
-    }
+    for (const filename of Object.values(files)) if (fs.existsSync(filename)) fs.unlinkSync(filename);
+    if (fs.existsSync(outDir)) fs.rmdirSync(outDir);
     console.log('✅ Cleanup complete. Sample files were not modified.');
   } catch (err) {
     console.error('Error during cleanup:', err.message);
@@ -101,7 +97,7 @@ for (let i = 0; i < 15; i++) {
 }
 step = 15;
 
-console.log('✅ Initial 15 lines created in test_experiment_data/');
+console.log(`✅ Initial 15 lines created in ${outDir}`);
 console.log('⚡ Continuously appending live experiment measurements every 100ms...');
 console.log('👉 Point the Host GUI "Live Experiment Files" selector to this folder.');
 console.log('🛑 Press Ctrl+C at any time to stop and automatically delete test files.\n');

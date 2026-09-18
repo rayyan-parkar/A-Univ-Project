@@ -1,20 +1,15 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { REQUIRED_FILES } from '../dataFiles';
+import { createTelemetryFrame } from '../telemetryProtocol';
 
-export const REQUIRED_FILES = [
-  'VibrationData.txt',
-  'VibrationData_FPGA.txt',
-  'SphericalData_low.txt',
-  'SphericalData_medium.txt',
-  'SphericalData_high.txt',
-  'CommunicationData_low.txt',
-  'CommunicationData_medium.txt',
-  'CommunicationData_high.txt'
-];
+export { REQUIRED_FILES } from '../dataFiles';
+export const TELEMETRY_HIGH_WATER_BYTES = 512 * 1024;
 
-export function useDataBroadcaster(socketRef, onLocalData, socketEpoch = 0, sessionReady = true) {
+export function useDataBroadcaster(socketRef, onLocalData, socketEpoch = 0, sessionReady = true, liveStatus = null) {
   const [broadcastMode, setBroadcastMode] = useState('debug'); // 'debug' or 'live'
   const [isBroadcasting, setIsBroadcasting] = useState(false);
-  const [liveDir, setLiveDir] = useState('./test_experiment_data');
+  const [isStarting, setIsStarting] = useState(false);
+  const [liveDir, setLiveDir] = useState('./src/data');
   const [statusMessage, setStatusMessage] = useState('Ready to broadcast');
 
   const stepRef = useRef(0);
@@ -26,6 +21,18 @@ export function useDataBroadcaster(socketRef, onLocalData, socketEpoch = 0, sess
     sessionReadyRef.current = sessionReady;
   }, [sessionReady]);
 
+  useEffect(() => {
+    if (!liveStatus || broadcastMode !== 'live') return;
+    if (liveStatus.status === 'Error') {
+      setStatusMessage(typeof liveStatus.detail === 'string' ? liveStatus.detail : 'Live ingest failed');
+      setIsStarting(false);
+      setIsBroadcasting(false);
+      liveSocketRef.current = null;
+    } else if (liveStatus.status === 'Running') { setIsStarting(false); setIsBroadcasting(true); setStatusMessage(`Streaming Live Files from ${liveDir}`); }
+    else if (liveStatus.status === 'Paused') setStatusMessage('Live ingest paused while reconnecting');
+    else if (liveStatus.status === 'Stopped') { setIsStarting(false); setIsBroadcasting(false); setStatusMessage('Live ingest stopped'); liveSocketRef.current = null; }
+  }, [broadcastMode, liveDir, liveStatus]);
+
   const sendLiveStart = useCallback(() => {
     const socket = socketRef?.current;
     if (sessionReady && socket && socket.readyState === 1 && socket !== liveSocketRef.current) {
@@ -34,8 +41,8 @@ export function useDataBroadcaster(socketRef, onLocalData, socketEpoch = 0, sess
   }, [liveDir, sessionReady, socketRef]);
 
   useEffect(() => {
-    if (broadcastMode === 'live' && isBroadcasting && sessionReady) sendLiveStart();
-  }, [broadcastMode, isBroadcasting, sendLiveStart, sessionReady, socketEpoch]);
+    if (broadcastMode === 'live' && (isBroadcasting || isStarting) && sessionReady) sendLiveStart();
+  }, [broadcastMode, isBroadcasting, isStarting, sendLiveStart, sessionReady, socketEpoch]);
 
   // Synthetic Debug Generator (In-Memory, 0 disk space)
   const generateDebugPayloads = (t) => {
@@ -85,12 +92,13 @@ export function useDataBroadcaster(socketRef, onLocalData, socketEpoch = 0, sess
   };
 
   const startBroadcasting = useCallback(() => {
-        setIsBroadcasting(true);
-
         if (broadcastMode === 'live') {
-            setStatusMessage(`Streaming Live Files from ${liveDir}`);
+      setIsStarting(true);
+      setStatusMessage(`Starting live ingest from ${liveDir}`);
       sendLiveStart();
     } else {
+      setIsStarting(false);
+      setIsBroadcasting(true);
       setStatusMessage('Broadcasting Synthetic Data (60 FPS)');
       stepRef.current = 0;
       if (intervalRef.current) clearInterval(intervalRef.current);
@@ -99,23 +107,15 @@ export function useDataBroadcaster(socketRef, onLocalData, socketEpoch = 0, sess
         stepRef.current += 1;
         const step = stepRef.current;
         const payloads = generateDebugPayloads(step);
+        const frame = createTelemetryFrame({ frameId: step - 1, waveform: payloads.waveformData, vector: payloads.vectorData, communication: payloads.commData });
 
         if (onLocalData) {
-          onLocalData(payloads);
+          onLocalData(frame);
         }
 
-        const now = Date.now();
         const socket = socketRef?.current;
-        if (sessionReadyRef.current && socket && socket.readyState === 1) {
-          if (payloads.waveformData) {
-            try { socket.send(JSON.stringify({ type: 'waveform', data: payloads.waveformData, timestamp: now })); } catch { /* reconnect will resume */ }
-          }
-          if (payloads.vectorData) {
-            try { socket.send(JSON.stringify({ type: 'vector', data: payloads.vectorData, timestamp: now })); } catch { /* reconnect will resume */ }
-          }
-          if (payloads.commData) {
-            try { socket.send(JSON.stringify({ type: 'communication', data: payloads.commData, timestamp: now })); } catch { /* reconnect will resume */ }
-          }
+        if (sessionReadyRef.current && socket && socket.readyState === 1 && socket.bufferedAmount <= TELEMETRY_HIGH_WATER_BYTES) {
+          try { socket.send(JSON.stringify(frame)); } catch { /* reconnect will resume */ }
         }
       }, 16);
     }
@@ -132,6 +132,7 @@ export function useDataBroadcaster(socketRef, onLocalData, socketEpoch = 0, sess
       try { socket.send(JSON.stringify({ type: 'stop-live-ingest' })); } catch { /* socket is reconnecting */ }
     }
 
+    setIsStarting(false);
     setIsBroadcasting(false);
     liveSocketRef.current = null;
     setStatusMessage('Broadcast stopped');
@@ -148,6 +149,7 @@ export function useDataBroadcaster(socketRef, onLocalData, socketEpoch = 0, sess
     broadcastMode,
     setBroadcastMode,
     isBroadcasting,
+    isStarting,
     startBroadcasting,
     stopBroadcasting,
     liveDir,

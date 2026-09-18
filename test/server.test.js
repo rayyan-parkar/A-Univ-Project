@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { WebSocket } from 'ws';
-import { createServer, validateMessage } from '../src/server.js';
+import { createServer, normalizeIp, normalizeWhitelist, validateMessage } from '../src/server.js';
 
 const apps = [];
 let staticFixture;
@@ -33,8 +33,8 @@ function withTimeout(promise, label, milliseconds = 5000) {
     return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-async function startTestServer() {
-    const app = createServer({ staticDir: staticFixture, logger: { info() {}, warn() {}, error() {} } });
+async function startTestServer(options = {}) {
+    const app = createServer({ staticDir: staticFixture, hostToken: '0123456789abcdef', logger: { info() {}, warn() {}, error() {} }, ...options });
     await withTimeout(new Promise((resolve, reject) => {
         app.httpServer.once('listening', resolve);
         app.httpServer.once('error', reject);
@@ -45,8 +45,8 @@ async function startTestServer() {
     return { app, url: `ws://127.0.0.1:${port}/ws`, httpUrl: `http://127.0.0.1:${port}` };
 }
 
-function connect(url) {
-    const ws = new WebSocket(url);
+function connect(url, options = {}) {
+    const ws = new WebSocket(url, options);
     const messages = [];
     const waiters = [];
     const listeners = new Set();
@@ -102,9 +102,13 @@ test('serves health, static assets, SPA fallback, and blocks traversal', async (
     assert.notEqual(traversal.status, 200);
 });
 
-test('assigns host, validates configuration, and authenticates a viewer', async () => {
+test('requires an explicit host claim, validates configuration, and authenticates a viewer', async () => {
     const { url } = await startTestServer();
     const host = await connect(url);
+    assert.deepEqual(await host.next(), { type: 'server-state', state: 'IDLE', role: 'waiting' });
+    send(host.ws, { type: 'claim-host', token: 'wrong-token-123456' });
+    assert.equal((await host.next()).code, 'invalid-host-token');
+    send(host.ws, { type: 'claim-host', token: '0123456789abcdef' });
     assert.deepEqual(await host.next(), { type: 'server-state', state: 'CONFIGURING', role: 'host' });
 
     send(host.ws, { type: 'configure', maxClients: 99, password: 'secret', whitelist: [] });
@@ -123,6 +127,8 @@ test('assigns host, validates configuration, and authenticates a viewer', async 
 test('rejects malformed signaling without taking down the server', async () => {
     const { url, httpUrl } = await startTestServer();
     const host = await connect(url);
+    await host.next();
+    send(host.ws, { type: 'claim-host', token: '0123456789abcdef' });
     await host.next();
     send(host.ws, { type: 'configure', maxClients: 2, password: 'secret', whitelist: [] });
     await host.next();
@@ -165,4 +171,73 @@ test('validates bounded telemetry and signaling fields before handling them', ()
     assert.equal(validateMessage({ type: 'vector', data: [[0, 0, 0]] }).ok, false);
     assert.equal(validateMessage({ type: 'webrtc-ice', candidate: { candidate: 'candidate:1 1 UDP 1 127.0.0.1 9 typ host', sdpMid: null, sdpMLineIndex: null, usernameFragment: null } }).ok, true);
     assert.equal(validateMessage({ type: 'webrtc-ice', candidate: { candidate: 'hostile' } }).ok, false);
+});
+
+test('normalizes IP allowlists and never exposes the host token in state or health', async () => {
+    assert.equal(normalizeIp('127.000.000.001'), '127.0.0.1');
+    assert.equal(normalizeIp('::ffff:127.0.0.1'), '127.0.0.1');
+    assert.equal(normalizeIp('2001:0db8:0:0:0:0:0:1'), '2001:db8::1');
+    assert.equal(normalizeWhitelist(['127.0.0.1', '::ffff:127.0.0.1']), null);
+    assert.equal(normalizeWhitelist(['not-an-ip']), null);
+    const { app, httpUrl } = await startTestServer();
+    const response = await fetch(`${httpUrl}/healthz`);
+    assert.doesNotMatch(await response.text(), /0123456789abcdef/);
+    assert.doesNotMatch(JSON.stringify(app.getState()), /0123456789abcdef/);
+});
+
+test('rechecks a preconnected viewer when the host configures an IP allowlist', async () => {
+    const { url } = await startTestServer();
+    const host = await connect(url); await host.next();
+    const viewer = await connect(url); assert.deepEqual(await viewer.next(), { type: 'server-state', state: 'IDLE', role: 'waiting' });
+    send(host.ws, { type: 'claim-host', token: '0123456789abcdef' }); await host.next();
+    send(host.ws, { type: 'configure', maxClients: 2, password: 'secret', whitelist: ['::1'] });
+    assert.deepEqual(await host.next(), { type: 'config-success', password: 'secret' });
+    assert.equal((await viewer.next()).code, 'ip-not-allowed');
+});
+
+test('reclaims a disconnected host during grace and promotes outage waiters', async () => {
+    const { url } = await startTestServer({ hostReconnectGraceMs: 1000, heartbeatIntervalMs: 1000, heartbeatTimeoutMs: 3000 });
+    const host = await connect(url); await host.next(); send(host.ws, { type: 'claim-host', token: '0123456789abcdef' }); await host.next();
+    send(host.ws, { type: 'configure', maxClients: 2, password: 'secret', whitelist: [] }); await host.next();
+    const viewer = await connect(url); await viewer.next(); send(viewer.ws, { type: 'auth', password: 'secret' }); await viewer.next(); await viewer.next();
+    const hostClosed = new Promise(resolve => host.ws.once('close', resolve)); host.ws.close(); await hostClosed;
+    const waiter = await connect(url); assert.deepEqual(await waiter.next(), { type: 'server-state', state: 'ACTIVE', role: 'waiting' });
+    const replacement = await connect(url); assert.deepEqual(await replacement.next(), { type: 'server-state', state: 'ACTIVE', role: 'waiting' });
+    send(replacement.ws, { type: 'claim-host', token: '0123456789abcdef' });
+    assert.deepEqual(await replacement.next(), { type: 'server-state', state: 'ACTIVE', role: 'host' });
+    assert.deepEqual(await waiter.next(), { type: 'server-state', state: 'ACTIVE', role: 'viewer-auth-required' });
+    send(replacement.ws, { type: 'waveform', data: [1, 2] });
+    assert.deepEqual(await viewer.next(), { type: 'waveform', data: [1, 2] });
+    replacement.ws.close(); waiter.ws.close(); viewer.ws.close();
+});
+
+test('grace expiry resets the room after host loss', async () => {
+    const { url } = await startTestServer({ hostReconnectGraceMs: 40, heartbeatIntervalMs: 1000, heartbeatTimeoutMs: 3000 });
+    const host = await connect(url); await host.next(); send(host.ws, { type: 'claim-host', token: '0123456789abcdef' }); await host.next();
+    send(host.ws, { type: 'configure', maxClients: 2, password: 'secret', whitelist: [] }); await host.next();
+    const viewer = await connect(url); await viewer.next(); send(viewer.ws, { type: 'auth', password: 'secret' }); await viewer.next(); await viewer.next();
+    const hostClosed = new Promise(resolve => host.ws.once('close', resolve)); host.ws.close(); await hostClosed;
+    assert.deepEqual(await viewer.next(), { type: 'server-reset', message: 'Host disconnected' });
+    viewer.ws.close();
+});
+
+test('evicts a non-ponging client with injected heartbeat timings', async () => {
+    const { app, url } = await startTestServer({ heartbeatIntervalMs: 10, heartbeatTimeoutMs: 25, hostReconnectGraceMs: 20 });
+    const client = await connect(url, { autoPong: false }); await client.next();
+    await withTimeout(new Promise((resolve, reject) => {
+        const poll = setInterval(() => { if (app.getState().connectedClients === 0) { clearInterval(poll); resolve(); } }, 5);
+        setTimeout(() => { clearInterval(poll); reject(new Error('non-ponging client was not evicted')); }, 1000);
+    }), 'heartbeat eviction', 1500);
+    assert.equal(app.getState().connectedClients, 0);
+    client.ws.terminate();
+});
+
+test('caps repeated viewer password failures and reports each failure', async () => {
+    const { url } = await startTestServer();
+    const host = await connect(url); await host.next(); send(host.ws, { type: 'claim-host', token: '0123456789abcdef' }); await host.next();
+    send(host.ws, { type: 'configure', maxClients: 2, password: 'secret', whitelist: [] }); await host.next();
+    const viewer = await connect(url); await viewer.next();
+    for (let attempt = 0; attempt < 5; attempt += 1) { send(viewer.ws, { type: 'auth', password: 'wrong' }); assert.deepEqual(await viewer.next(), { type: 'auth-fail', message: 'Invalid password' }); }
+    await new Promise((resolve, reject) => { const timer = setTimeout(() => reject(new Error('viewer was not closed after auth failures')), 1000); viewer.ws.once('close', () => { clearTimeout(timer); resolve(); }); });
+    host.ws.close();
 });

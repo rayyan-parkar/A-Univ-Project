@@ -5,7 +5,7 @@ A real-time visualization application developed for the Aston Institute of Photo
 This custom software application was created to demonstrate and visualize the impact of fixed precision on State-of-Polarization (SOP) sensing using coherent transceivers. The application provides real-time data visualization of photonics research, including vibration sensing, SOP vector representations, and communication metrics.
 
 
-The architecture uses an **Selective Forwarding Unit (SFU)**. The first browser instance to connect is automatically assigned as the **Host**, broadcasting a camera stream and dataset values. Subsequent instances connect as **Viewers** to receive the video stream and data.
+The architecture uses a **Selective Forwarding Unit (SFU)**. New browser sockets wait unassigned until the presenter claims the host role with the token printed by the server; subsequent instances connect as **Viewers** to receive the video stream and data.
 
 ## Research Team
 Aston Institute of Photonics Technologies, Aston University, Birmingham, UK
@@ -30,11 +30,11 @@ Aston Institute of Photonics Technologies, Aston University, Birmingham, UK
 * **Video Feed Support:** Video streaming directly from the Host camera to all Viewers.
 
 ### Host GUI Data Transmission Engine
-* **Single-Session Host Control:** The Host controls both video broadcasting and data transmission directly from the dashboard GUI.
+* **Single-Session Host Control:** The presenter claims the Host role with the terminal token, then controls both video broadcasting and data transmission from the dashboard.
 * **Dual Data Modes:**
   * **Debug / Simulation Mode:** Generates photonics data directly in browser memory.
   * **Live Experiment Files Mode:** Allows the Host to select local experiment files from their machine.
-* **Enforced File Naming System:** Validates and matches all 8 required experiment files ensuring they meet the following:
+* **Server-local experiment data:** Live mode reads named files from the server-local directory supplied by the Host; missing files simply produce no live packets. The expected names are:
   1. `VibrationData.txt`
   2. `VibrationData_FPGA.txt`
   3. `SphericalData_low.txt`
@@ -45,10 +45,9 @@ Aston Institute of Photonics Technologies, Aston University, Birmingham, UK
   8. `CommunicationData_high.txt`
 
 ### Security & Session Management
-* **Single-Session Flow:** Dynamic assignment of the first connected user as Host. Subsequent clients are held in a waiting state until the Host configures the room.
+* **Single-Session Flow:** Explicit, bounded host-token claim. Subsequent clients are held in a waiting state until the Host configures the room.
 * **Access Control:** Host configurations allow them to set the maximum number of viewers, a cryptographically secure 16-digit hexadecimal password, and an IP whitelist.
-* **Tarpit Security:** Any unauthorized IP trying to connect to an active session is tarpitted with a 5-second delay to mitigate automated script-scanning.
-* **Connection Management:** Automatic reconnection with color-coded statuses (🟢 Connected, 🟡 Error, 🔴 Disconnected).
+* **Connection Management:** Automatic reconnect with capped exponential backoff and color-coded statuses (🟢 Connected, 🟡 Error, 🔴 Disconnected).
 
 ---
 
@@ -103,7 +102,9 @@ Aston Institute of Photonics Technologies, Aston University, Birmingham, UK
 ```bash
 node src/server.js
 ```
-*Starts on `ws://127.0.0.1:8181`.*
+*Starts on `http://127.0.0.1:8181` and serves WebSocket `/ws`. The terminal prints `HOST_TOKEN=...` after the server begins listening; enter that token in the presenter browser. The token is kept only in the browser session and server memory.*
+
+The default localhost binding is intentional for the phase-2 deployment. Tailscale proxy identity/IP allowlisting remains deferred; do not treat a proxied client address as an end-to-end allowlist identity.
 
 ### 2. Start the Frontend Application
 Run the Vite development server:
@@ -111,7 +112,7 @@ Run the Vite development server:
 npm run dev
 ```
 Open `http://localhost:5173` in your browser:
-* The first tab will open the **Host Setup Screen** where you can specify viewer limits, custom passwords, and whitelists.
+* The first tab waits for a presenter token. Enter the `HOST_TOKEN` printed in the server terminal to open the **Host Setup Screen**, where you can specify viewer limits, custom passwords, and whitelists.
 * Once the Host starts the session, the Host can start the camera feed and broadcast dataset measurements (in either **Debug** or **Live File** mode).
 * Subsequent browser tabs connect as Viewers, enter the password, and receive live video and data streams in real time.
 
@@ -121,7 +122,7 @@ To test live file appending without modifying or corrupting sample datasets, run
 npm run mock-experiment
 ```
 * Creates a temporary `test_experiment_data/` folder with all 8 required files and continuously appends live measurements.
-* Point the Host GUI file picker to `test_experiment_data/`.
+* Point the Host GUI directory field to `test_experiment_data/`.
 * Press `Ctrl+C` to stop; the temporary directory is automatically deleted and cleaned up.
 
 ### Production Build

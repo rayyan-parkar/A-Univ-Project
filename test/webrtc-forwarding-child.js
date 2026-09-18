@@ -68,7 +68,7 @@ let removeViewerListener;
 let successful = false;
 
 try {
-    app = createServer({ staticDir: process.cwd(), logger: { info() {}, warn() {}, error() {} } });
+    app = createServer({ staticDir: process.cwd(), hostToken: '0123456789abcdef', logger: { info() {}, warn() {}, error() {} } });
     await new Promise((resolve, reject) => {
         app.httpServer.once('listening', resolve);
         app.httpServer.once('error', reject);
@@ -76,6 +76,8 @@ try {
     });
     const port = app.httpServer.address().port;
     host = await connect(`ws://127.0.0.1:${port}/ws`);
+    await host.next();
+    send(host.ws, { type: 'claim-host', token: '0123456789abcdef' });
     await host.next();
     send(host.ws, { type: 'configure', maxClients: 2, password: 'secret', whitelist: [] });
     await host.next();

@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 
-export default function SetupScreen({ sessionState, role, authError, configureSession, authenticate }) {
+export default function SetupScreen({ sessionState, role, authError, configureSession, authenticate, claimHost, streamError }) {
     const [maxClients, setMaxClients] = useState(3);
     const [password, setPassword] = useState('');
     const [whitelist, setWhitelist] = useState('');
+    const [hostToken, setHostToken] = useState('');
 
     const handleConfigure = (e) => {
         e.preventDefault();
@@ -16,10 +17,15 @@ export default function SetupScreen({ sessionState, role, authError, configureSe
         authenticate(password);
     };
 
+    const handleClaim = (e) => {
+        e.preventDefault();
+        claimHost(hostToken.trim());
+    };
+
     if (sessionState === 'CONNECTING') {
         return (
             <div className="setup-container">
-                <h2>Connecting to global SFU server...</h2>
+                <h2>Connecting to the session server...</h2>
             </div>
         );
     }
@@ -27,8 +33,8 @@ export default function SetupScreen({ sessionState, role, authError, configureSe
     if (sessionState === 'DISCONNECTED') {
         return (
             <div className="setup-container">
-                <h2>Disconnected from server.</h2>
-                <button onClick={() => window.location.reload()}>Reconnect</button>
+                <h2>Reconnecting to server...</h2>
+                <p>The connection will retry automatically.</p>
             </div>
         );
     }
@@ -53,6 +59,7 @@ export default function SetupScreen({ sessionState, role, authError, configureSe
                     </label>
                     <button type="submit">Start Session</button>
                 </form>
+                {authError && <p className="error-text">{authError}</p>}
             </div>
         );
     }
@@ -60,8 +67,17 @@ export default function SetupScreen({ sessionState, role, authError, configureSe
     if (role === 'waiting') {
         return (
             <div className="setup-container">
-                <h2>Waiting...</h2>
-                <p>The host is currently configuring the room, please be patient.</p>
+                <h2>Waiting for a host</h2>
+                <p>Enter the presenter token to claim host control, or wait for the presenter to configure this room.</p>
+                <form onSubmit={handleClaim} className="setup-form">
+                    <label>
+                        Presenter host token:
+                        <input type="password" value={hostToken} onChange={e => setHostToken(e.target.value)} minLength="16" autoComplete="off" />
+                    </label>
+                    <button type="submit" disabled={hostToken.length < 16}>Claim Host</button>
+                </form>
+                {authError && <p className="error-text">{authError}</p>}
+                {streamError && <p className="error-text">{streamError}</p>}
             </div>
         );
     }

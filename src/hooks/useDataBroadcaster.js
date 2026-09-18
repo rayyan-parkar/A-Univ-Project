@@ -11,7 +11,7 @@ export const REQUIRED_FILES = [
   'CommunicationData_high.txt'
 ];
 
-export function useDataBroadcaster(socketRef, onLocalData) {
+export function useDataBroadcaster(socketRef, onLocalData, socketEpoch = 0, sessionReady = true) {
   const [broadcastMode, setBroadcastMode] = useState('debug'); // 'debug' or 'live'
   const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [liveDir, setLiveDir] = useState('./test_experiment_data');
@@ -19,6 +19,23 @@ export function useDataBroadcaster(socketRef, onLocalData) {
 
   const stepRef = useRef(0);
   const intervalRef = useRef(null);
+  const liveSocketRef = useRef(null);
+  const sessionReadyRef = useRef(sessionReady);
+
+  useEffect(() => {
+    sessionReadyRef.current = sessionReady;
+  }, [sessionReady]);
+
+  const sendLiveStart = useCallback(() => {
+    const socket = socketRef?.current;
+    if (sessionReady && socket && socket.readyState === 1 && socket !== liveSocketRef.current) {
+      try { socket.send(JSON.stringify({ type: 'start-live-ingest', dir: liveDir })); liveSocketRef.current = socket; } catch { /* reconnect will retry */ }
+    }
+  }, [liveDir, sessionReady, socketRef]);
+
+  useEffect(() => {
+    if (broadcastMode === 'live' && isBroadcasting && sessionReady) sendLiveStart();
+  }, [broadcastMode, isBroadcasting, sendLiveStart, sessionReady, socketEpoch]);
 
   // Synthetic Debug Generator (In-Memory, 0 disk space)
   const generateDebugPayloads = (t) => {
@@ -68,19 +85,11 @@ export function useDataBroadcaster(socketRef, onLocalData) {
   };
 
   const startBroadcasting = useCallback(() => {
-    const socket = socketRef?.current;
-    const isSocketOpen = socket && socket.readyState === 1;
+        setIsBroadcasting(true);
 
-    setIsBroadcasting(true);
-
-    if (broadcastMode === 'live') {
-      setStatusMessage(`Streaming Live Files from ${liveDir}`);
-      if (isSocketOpen) {
-        socket.send(JSON.stringify({
-          type: 'start-live-ingest',
-          dir: liveDir
-        }));
-      }
+        if (broadcastMode === 'live') {
+            setStatusMessage(`Streaming Live Files from ${liveDir}`);
+      sendLiveStart();
     } else {
       setStatusMessage('Broadcasting Synthetic Data (60 FPS)');
       stepRef.current = 0;
@@ -96,20 +105,21 @@ export function useDataBroadcaster(socketRef, onLocalData) {
         }
 
         const now = Date.now();
-        if (isSocketOpen) {
+        const socket = socketRef?.current;
+        if (sessionReadyRef.current && socket && socket.readyState === 1) {
           if (payloads.waveformData) {
-            socket.send(JSON.stringify({ type: 'waveform', data: payloads.waveformData, timestamp: now }));
+            try { socket.send(JSON.stringify({ type: 'waveform', data: payloads.waveformData, timestamp: now })); } catch { /* reconnect will resume */ }
           }
           if (payloads.vectorData) {
-            socket.send(JSON.stringify({ type: 'vector', data: payloads.vectorData, timestamp: now }));
+            try { socket.send(JSON.stringify({ type: 'vector', data: payloads.vectorData, timestamp: now })); } catch { /* reconnect will resume */ }
           }
           if (payloads.commData) {
-            socket.send(JSON.stringify({ type: 'communication', data: payloads.commData, timestamp: now }));
+            try { socket.send(JSON.stringify({ type: 'communication', data: payloads.commData, timestamp: now })); } catch { /* reconnect will resume */ }
           }
         }
       }, 16);
     }
-  }, [broadcastMode, liveDir, onLocalData, socketRef]);
+  }, [broadcastMode, liveDir, onLocalData, sendLiveStart, socketRef]);
 
   const stopBroadcasting = useCallback(() => {
     if (intervalRef.current) {
@@ -119,10 +129,11 @@ export function useDataBroadcaster(socketRef, onLocalData) {
 
     const socket = socketRef?.current;
     if (socket && socket.readyState === 1) {
-      socket.send(JSON.stringify({ type: 'stop-live-ingest' }));
+      try { socket.send(JSON.stringify({ type: 'stop-live-ingest' })); } catch { /* socket is reconnecting */ }
     }
 
     setIsBroadcasting(false);
+    liveSocketRef.current = null;
     setStatusMessage('Broadcast stopped');
   }, [socketRef]);
 

@@ -16,12 +16,14 @@ function App() {
   const session = useExperimentSession();
   const {
     socketRef,
+    socketEpoch,
     connectionStatus,
     sessionState,
     role,
     generatedPassword,
     authError,
     configureSession,
+    claimHost,
     authenticate,
     updateGraphData,
     syncDelayMs,
@@ -29,8 +31,8 @@ function App() {
     graphData
   } = session;
 
-  const webrtc = useWebRTC(socketRef, role);
-  const broadcaster = useDataBroadcaster(socketRef, updateGraphData);
+  const webrtc = useWebRTC(socketRef, role, socketEpoch);
+  const broadcaster = useDataBroadcaster(socketRef, updateGraphData, socketEpoch, sessionState === 'ACTIVE' && role === 'host');
 
   const videoRef = useRef(null);
 
@@ -51,8 +53,9 @@ function App() {
   }, [webrtc.localStream, webrtc.remoteStream, webrtc.isHostStreaming, role]);
 
   const getStatusClass = () => {
-    if (connectionStatus.includes('Connected')) return 'status-connected';
-    if (connectionStatus.includes('Error')) return 'status-error';
+    const status = connectionStatus.toLowerCase();
+    if (status.includes('connected')) return 'status-connected';
+    if (status.includes('error')) return 'status-error';
     return 'status-disconnected';
   };
 
@@ -65,6 +68,8 @@ function App() {
         authError={authError}
         configureSession={configureSession}
         authenticate={authenticate}
+        claimHost={claimHost}
+        streamError={webrtc.streamError}
       />
     );
   }
@@ -117,7 +122,10 @@ function App() {
                       Start Camera Broadcast
                     </button>
                   ) : (
-                    <span className="host-badge camera-active">📹 Camera Active</span>
+                    <>
+                      <span className="host-badge camera-active">📹 Camera Active</span>
+                      <button className="host-btn camera-stop-btn" onClick={webrtc.stopHostStream}>Stop Camera</button>
+                    </>
                   )}
 
                   {!broadcaster.isBroadcasting ? (
@@ -215,6 +223,10 @@ function App() {
               ) : (
                 <img src={videoUnavailable} alt="Video Unavailable" />
               )}
+              {role === 'viewer' && !webrtc.isHostStreaming && (
+                <button className="host-btn camera-btn" onClick={webrtc.restartViewerStream}>Restart Camera Stream</button>
+              )}
+              {webrtc.streamError && <p className="error-text">{webrtc.streamError}</p>}
             </div>
 
             <div className="vibration-container">

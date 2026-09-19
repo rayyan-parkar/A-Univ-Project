@@ -1,236 +1,441 @@
-# Fixed Precision Impact on State-of-Polarization Sensing
-A real-time visualization application developed for the Aston Institute of Photonics Technologies at Aston University, to be presented at the OFC Conference.
+# Fixed-Precision Impact on State-of-Polarization Sensing
 
-## Overview
-This custom software application was created to demonstrate and visualize the impact of fixed precision on State-of-Polarization (SOP) sensing using coherent transceivers. The application provides real-time data visualization of photonics research, including vibration sensing, SOP vector representations, and communication metrics.
+A real-time visualization and streaming platform for demonstrating the effect of fixed numerical precision on **State-of-Polarization (SOP) sensing using coherent optical transceivers**.
 
+Developed for the **Aston Institute of Photonics Technologies, Aston University**, for demonstration at the **Optical Fiber Communication (OFC) Conference**.
 
-The architecture uses a **Selective Forwarding Unit (SFU)**. New browser sockets wait unassigned until the presenter claims the host role with the token printed by the server; subsequent instances connect as **Viewers** to receive the video stream and data.
+## What it does
 
-## Research Team
-Aston Institute of Photonics Technologies, Aston University, Birmingham, UK
+The application provides a synchronized browser-based view of:
 
-* Geraldo Gomes
-* Rafael Vieira
-* Pedro Freire
-* Yaroslav Prylepskiy
-* Sergei Turitsyn
+* Live presenter camera video
+* Optical and FPGA vibration measurements
+* 3D Stokes / Poincaré sphere vectors at low, medium, and high precision
+* Communication constellation scatter plots at low, medium, and high precision
 
----
+One browser acts as the **Host/Presenter** and controls the experiment. Other browsers join as **Viewers**.
 
-## Features
-
-### Real-Time Data Visualization
-* **Vibration Sensing:** Displays live vibration sensor data and FPGA sensing measurements.
-* **State-of-Polarization Visualization:** 3D spherical graphs showing SOP vectors at three precision levels:
-  * Low Precision
-  * Medium Precision
-  * High Precision
-* **Communication Data Monitoring:** 2D constellation scatter plots with SNR distributions.
-* **Video Feed Support:** Video streaming directly from the Host camera to all Viewers.
-
-### Host GUI Data Transmission Engine
-* **Single-Session Host Control:** The presenter claims the Host role with the terminal token, then controls both video broadcasting and data transmission from the dashboard.
-* **Dual Data Modes:**
-  * **Debug / Simulation Mode:** Generates photonics data directly in browser memory.
-  * **Live Experiment Files Mode:** Allows the Host to select local experiment files from their machine.
-* **Server-local experiment data:** Live mode reads named files from the server-local directory supplied by the Host; missing files simply produce no live packets. The expected names are:
-  1. `VibrationData.txt`
-  2. `VibrationData_FPGA.txt`
-  3. `SphericalData_low.txt`
-  4. `SphericalData_medium.txt`
-  5. `SphericalData_high.txt`
-  6. `CommunicationData_low.txt`
-  7. `CommunicationData_medium.txt`
-  8. `CommunicationData_high.txt`
-
-### Security & Session Management
-* **Single-Session Flow:** Explicit, bounded host-token claim. Subsequent clients are held in a waiting state until the Host configures the room.
-* **Access Control:** Host configurations allow them to set the maximum number of viewers, a cryptographically secure 16-digit hexadecimal password, and an IP whitelist.
-* **Connection Management:** Automatic reconnect with capped exponential backoff and color-coded statuses (🟢 Connected, 🟡 Error, 🔴 Disconnected).
-
----
-
-## Technology Stack
-
-### Frontend
-* **React 19.1.1** - UI framework
-* **Vite 7.3.0** - Build tool and dev server
-* **Three.js 0.180.0** - 3D graphics rendering
-* **@react-three/fiber & @react-three/drei** - React renderer for Three.js
-* **Chart.js & react-chartjs-2** - Data visualization charts
-
-### Backend & Environment
-* **Node.js (v24)** - Server environment
-* **ws** - Real-time WebSocket signaling & data relay
-* **@roamhq/wrtc** - WebRTC SFU implementation for Node.js
-* **Nix / Direnv** - Flake-based development shell with Node.js 24 and native headers
-
----
-
-## Prerequisites
-* **Nix package manager** with `direnv` enabled (recommended), OR:
-* **Node.js v24.x** installed locally.
-* Python 3 and `pkg-config` (required to compile the native `@roamhq/wrtc` dependency).
-
----
-
-## Installation
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/rayyan-parkar/A-Univ-Project.git
-   cd A-Univ-Project
-   ```
-
-2. If using Nix and `direnv`, allow the directory environment:
-   ```bash
-   direnv allow
-   ```
-   *(This automatically loads Node.js v24, Python 3, and package compilation tools).*
-
-3. Install dependencies:
-   ```bash
-   npm install
-   ```
-
----
-
-## Usage
-
-### 1. Start the SFU Server
-```bash
-node src/server.js
-```
-*Starts on `http://127.0.0.1:8181` and serves WebSocket `/ws`. The terminal prints `HOST_TOKEN=...` after the server begins listening; enter that token in the presenter browser. The token is kept only in the browser session and server memory.*
-
-The default localhost binding is intentional for the phase-2 deployment. Tailscale proxy identity/IP allowlisting remains deferred; do not treat a proxied client address as an end-to-end allowlist identity.
-
-### 2. Start the Frontend Application
-Run the Vite development server:
-```bash
-npm run dev
-```
-Open `http://localhost:5173` in your browser:
-* The first tab waits for a presenter token. Enter the `HOST_TOKEN` printed in the server terminal to open the **Host Setup Screen**, where you can specify viewer limits, custom passwords, and whitelists.
-* Once the Host starts the session, the Host can start the camera feed and broadcast dataset measurements (in either **Debug** or **Live File** mode).
-* Subsequent browser tabs connect as Viewers, enter the password, and receive live video and data streams in real time.
-
-### 3. Safe Mock Experiment Simulation (Optional Testing)
-To test live file appending without modifying or corrupting sample datasets, run the mock experiment writer:
-```bash
-npm run mock-experiment
-```
-* Creates a unique temporary directory in the operating system temp area with all 8 required files and continuously appends live measurements. The absolute path is printed in the terminal.
-* Point the Host GUI directory field to the printed temporary directory.
-* Press `Ctrl+C` to stop; the temporary directory is automatically deleted and cleaned up.
-
-### Production Build
-Build and preview optimized production assets:
-```bash
-npm run build
-npm run preview
+```text
+                         ┌──────────────────┐
+                         │ Host / Presenter │
+                         │      Browser     │
+                         └───────┬──────────┘
+                                 │
+                    WebRTC video │ Telemetry
+                                 ▼
+                      ┌────────────────────┐
+                      │   Node.js Server   │
+                      │ WebSocket + WebRTC │
+                      │        SFU         │
+                      └─────────┬──────────┘
+                                │
+                 ┌──────────────┼──────────────┐
+                 ▼              ▼              ▼
+             Viewer 1       Viewer 2       Viewer N
 ```
 
-### Private Tailscale deployment (phase 1)
-The production server serves both the built frontend and WebSocket signaling from one
-same-origin HTTP server. It binds to `127.0.0.1:8181` by default, so it is suitable
-for a private Tailscale Serve proxy. Override the bind address or port only when
-needed with bounded `HOST` and `PORT` environment variables.
+The Node.js server handles authentication, session management, telemetry distribution, WebRTC forwarding, reconnect/recovery behaviour, rate limiting, heartbeat detection, and static application serving.
+
+---
+
+## Quick Start
+
+### Requirements
+
+* Node.js **20, 22, or 24**
+* npm
+* Python 3 and native C/C++ build tools
+
+Native build tools are required by `@roamhq/wrtc`.
+
+### Install
+
+```bash
+git clone https://github.com/rayyan-parkar/A-Univ-Project.git
+cd A-Univ-Project
+npm install
+```
+
+### Build and run
 
 ```bash
 npm run build
 npm run server
+```
+
+The server starts on:
+
+```text
+http://127.0.0.1:8181
+```
+
+It also prints a secret host token:
+
+```text
+HOST_TOKEN=<generated-token>
+```
+
+Keep this token private. It is required to claim the Host role and is stored only in server memory.
+
+---
+
+## Host / Presenter
+
+Open:
+
+```text
+http://localhost:8181
+```
+
+Enter the `HOST_TOKEN` printed by the server and select **Claim Host**.
+
+Configure the session:
+
+* **Viewer Password** — automatically generated or manually specified
+* **Max Viewers** — optional viewer limit
+* **IP Allowlist** — optional comma-separated list of permitted viewer addresses
+
+Select **Start Session**.
+
+### Camera
+
+Select **Start Camera** and grant camera permission when prompted.
+
+The camera stream is forwarded to authenticated viewers through WebRTC.
+
+### Experiment data
+
+Two data sources are supported.
+
+#### Debug simulation
+
+Select **Start Debug** to generate synthetic experiment telemetry without laboratory equipment.
+
+Use this mode for development, demonstrations, and interface testing.
+
+#### Live experiment ingest
+
+For real measurements, provide a directory containing exactly:
+
+```text
+VibrationData.txt
+VibrationData_FPGA.txt
+
+SphericalData_low.txt
+SphericalData_medium.txt
+SphericalData_high.txt
+
+CommunicationData_low.txt
+CommunicationData_medium.txt
+CommunicationData_high.txt
+```
+
+Example paths:
+
+```text
+Windows:
+C:\Experiments\Session_1
+
+Linux/macOS:
+/home/user/experiments/session_1
+```
+
+Enter the absolute directory path in **Live Directory**, then select **Start Live Ingest**.
+
+The ingest engine reads the eight streams synchronously and broadcasts complete telemetry frames to connected clients.
+
+---
+
+## Testing live ingest without laboratory equipment
+
+A mock experiment writer is included:
+
+```bash
+npm run mock-experiment
+```
+
+It creates an isolated temporary experiment directory and continuously appends valid synthetic measurements.
+
+Example:
+
+```text
+Mock experiment directory: /tmp/a-univ-experiment-12345/
+Writing live rows every 33ms... Press Ctrl+C to stop.
+```
+
+Copy the generated directory into the application's **Live Directory** field and start live ingest.
+
+Press `Ctrl+C` when finished. The temporary dataset is cleaned up automatically.
+
+---
+
+## Viewer
+
+Viewers require only a modern web browser.
+
+Open the URL supplied by the presenter and enter the **Viewer Password**.
+
+The viewer dashboard displays:
+
+* Presenter video
+* Optical/FPGA vibration waveform
+* Interactive 3D Stokes / Poincaré sphere
+* Low-, medium-, and high-precision constellation plots
+* Connection and stream status
+
+If the WebRTC video stream is interrupted, use **Restart Camera Stream** to request recovery without leaving the session.
+
+---
+
+## Remote viewing with Tailscale
+
+The application binds locally by default.
+
+For private remote demonstrations, Tailscale Serve can expose the application over authenticated HTTPS without opening the server directly to the public internet.
+
+Install and authenticate Tailscale, then run the application normally:
+
+```bash
+npm run build
+npm run server
+```
+
+In another terminal:
+
+```bash
 tailscale serve --bg http://127.0.0.1:8181
 ```
 
-Open the HTTPS URL printed by `tailscale serve status` from a device on the same
-tailnet. Tailscale terminates HTTPS/WSS; the Node server remains plain HTTP on
-localhost. The host can use that private HTTPS URL (or open `http://127.0.0.1:8181`
-directly on the server computer). Check `http://127.0.0.1:8181/healthz` when
-diagnosing startup.
+Inspect the generated address with:
+
+```bash
+tailscale serve status
+```
+
+Viewers can then use the HTTPS Tailscale URL supplied by the presenter.
+
+When finished:
+
+```bash
+tailscale serve reset
+```
+
+Access can be further restricted using your organisation's Tailscale access-control policy.
 
 ---
 
-## Project Structure
+## Development
+
+Start the Vite development server:
+
+```bash
+npm run dev
 ```
-A-Univ-Project/
-├── src/
-│   ├── App.jsx                  # Main application dashboard
-│   ├── VibrationSensor.jsx      # Vibration & FPGA visualization
-│   ├── SphericalGraph.jsx       # 3D Poincaré SOP vector rendering
-│   ├── CommunicationData.jsx    # 2D Constellation scatter charts
-│   ├── server.js                # Unified SFU WebSocket / WebRTC server
-│   ├── hooks/
-│   │   ├── useDataBroadcaster.js   # Host data transmission engine (Debug/Live)
-│   │   ├── useExperimentSession.js # WebSocket & session state management
-│   │   └── useWebRTC.js            # WebRTC RTCPeerConnection management
-│   ├── components/
-│   │   └── SetupScreen.jsx      # Host configuration & viewer authentication UI
-│   ├── data/                    # Sample experiment datasets
-│   ├── App.css                  # Dashboard styling & layout
-│   ├── index.css                # Global CSS reset & tokens
-│   └── main.jsx                 # App entry point
-├── scripts/
-│   └── mock_experiment_writer.js # Safe live file-tailing test generator
-├── public/
-│   ├── logo.png                 # Institution logo
-│   ├── right-logo.jpg           # Secondary logo
-│   └── video-unavailable.jpg    # Placeholder fallback image
-├── flake.nix                    # Nix package declaration
-├── flake.lock                   # Nix lockfile
-├── .envrc                       # direnv script
-├── index.html                   # HTML entrypoint
-├── vite.config.js               # Vite builder config
-├── package.json                 # Node dependencies and scripts
-└── eslint.config.js             # Linter config
+
+Run the production build:
+
+```bash
+npm run build
 ```
+
+Run linting:
+
+```bash
+npm run lint
+```
+
+### Automated tests
+
+```bash
+npm test
+```
+
+Current test suite:
+
+```text
+24 tests
+24 passing
+0 failing
+```
+
+The automated tests cover areas including:
+
+* Live file tailing and incremental writes
+* Incomplete and malformed experiment rows
+* File truncation and rotation
+* Bounded buffering under fast writers
+* Static serving and traversal protection
+* Host and viewer authentication
+* IP allowlists
+* Telemetry protocol validation
+* WebSocket signalling validation
+* Native WebRTC forwarding
+* Host recovery and grace-period expiry
+* Heartbeat-based client eviction
+* Password-attempt limiting
+* Late-viewer telemetry snapshots
+* Backpressure behaviour
+* Stream restart rate limiting
+* Reconnection backoff
+* High-frequency telemetry validation
 
 ---
 
-## WebSocket Protocol
-The unified server (`src/server.js`) relays data payloads from the Host to all authenticated Viewers:
+## Platform setup
 
-### Waveform Data
-```json
-{
-  "type": "waveform",
-  "data": [vibrationValue, fpgaValue]
-}
+### Windows
+
+Install:
+
+* Node.js
+* Python 3
+* Visual Studio C++ Build Tools
+
+For example:
+
+```powershell
+winget install Microsoft.VisualStudio.2022.BuildTools --force --override "--passive --wait --add Microsoft.VisualStudio.Workload.VCTools"
+winget install Python.Python.3.11
+winget install OpenJS.NodeJS.LTS
 ```
 
-### Vector Data (SOP)
-```json
-{
-  "type": "vector",
-  "data": [
-    [x1, y1, z1], [x2, y2, z2], [x3, y3, z3],  // Low precision
-    [x4, y4, z4], [x5, y5, z5], [x6, y6, z6],  // Medium precision
-    [x7, y7, z7], [x8, y8, z8], [x9, y9, z9]   // High precision
-  ]
-}
+Ensure camera access is enabled under:
+
+```text
+Settings → Privacy & Security → Camera
 ```
 
-### Communication Data
-```json
-{
-  "type": "communication",
-  "data": [
-    [lowX, lowY],
-    [medX, medY],
-    [highX, highY]
-  ]
-}
+### macOS
+
+```bash
+brew install node python
+xcode-select --install
 ```
+
+Grant your browser camera access under:
+
+```text
+System Settings → Privacy & Security → Camera
+```
+
+### Ubuntu / Debian
+
+```bash
+sudo apt update
+sudo apt install -y curl build-essential python3 pkg-config
+```
+
+Install a supported Node.js release before running `npm install`.
+
+### Fedora / RHEL
+
+```bash
+sudo dnf install -y gcc-c++ make python3 pkgconf-pkg-config nodejs
+```
+
+### Arch Linux / Manjaro
+
+```bash
+sudo pacman -S base-devel python pkgconf nodejs npm
+```
+
+### Nix / NixOS
+
+The repository includes `flake.nix`.
+
+With `direnv`:
+
+```bash
+direnv allow
+```
+
+The development environment provisions Node.js, Python and the required native-build dependencies.
 
 ---
 
-## Contact & Licensing
-Developed for the Photonics Department at Aston University.
+## Troubleshooting
 
-* **Aston Institute of Photonics Technologies**
-* Aston University
-* Birmingham, United Kingdom
+### `EADDRINUSE` on port 8181
 
-*Presented at the Optical Fiber Communication (OFC) Conference.*
-*Dashboard built by Rayyan Parkar.*
+Another process is already listening on the application port.
+
+Linux/macOS:
+
+```bash
+lsof -ti:8181
+```
+
+Terminate the old process before restarting the server.
+
+### `@roamhq/wrtc` installation fails
+
+Ensure native compiler tooling and Python are installed.
+
+On macOS:
+
+```bash
+xcode-select --install
+```
+
+On Debian/Ubuntu:
+
+```bash
+sudo apt install build-essential python3 pkg-config
+```
+
+On Windows, install the Visual Studio C++ Build Tools.
+
+### Host browser refreshes or disconnects
+
+The server keeps the session alive during a short host-disconnection grace period.
+
+Return to the application and reclaim the Host role using the original `HOST_TOKEN`.
+
+Connected viewers can remain in the session during recovery.
+
+### Viewer video is black or disconnected
+
+Verify that:
+
+* The Host camera is running
+* Browser camera permissions are allowed
+* The Viewer is still connected
+
+Then select **Restart Camera Stream**.
+
+### Live ingest reports an error
+
+Check that:
+
+1. The directory exists.
+2. All eight required files exist.
+3. Their filenames match exactly.
+4. The server process has permission to read them.
+
+If an experiment has been restarted or its files replaced, restart live ingest so the cursors can realign.
+
+---
+
+## Technology
+
+**Frontend**
+
+React · Vite · Three.js · Chart.js
+
+**Server**
+
+Node.js · WebSocket (`ws`) · WebRTC (`@roamhq/wrtc`)
+
+**Networking**
+
+WebSocket telemetry/signalling · WebRTC media forwarding · optional Tailscale HTTPS access
+
+---
+
+## Research context
+
+This software was developed for research demonstration of fixed-precision effects in State-of-Polarization sensing using coherent optical communication systems.
+
+Developed for the **Aston Institute of Photonics Technologies at Aston University, Birmingham, United Kingdom**.
+
+Dashboard developed by **Rayyan Parkar** for presentation at the **Optical Fiber Communication (OFC) Conference**.

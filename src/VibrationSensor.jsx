@@ -1,5 +1,5 @@
-import React, {useState, useEffect, useMemo} from 'react';
-import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title} from 'chart.js';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 
 ChartJS.register(
@@ -10,44 +10,47 @@ ChartJS.register(
     Title,
 );
 
-const VibrationChart = React.memo(function VibrationChart({latestData, title}) {
+const timeLabels = Array.from({ length: 100 }, (_, i) => i);
+
+const VibrationChart = React.memo(function VibrationChart({ latestData, title }) {
     const [signalData, setSignalData] = useState(() => new Array(100).fill(0));
 
-    // Memoise time array
-    const time = useMemo(() => Array.from({length: 100}, (_, i) => i), []);
-
     useEffect(() => {
-        if (latestData != null) {
-            setSignalData(prev => {
-                const newData = [...prev];
-                newData.shift(); // Remove first element
-                newData.push(parseFloat(latestData)); // Add new element at end
-                return newData;
-            });
-        }
-    }, [latestData, title]);
+        if (latestData == null) return;
+        const value = parseFloat(latestData);
+        if (Number.isNaN(value)) return;
 
-    // Memoise Y-axis range calculation
+        setSignalData(prev => {
+            const next = prev.slice(1);
+            next.push(value);
+            return next;
+        });
+    }, [latestData]);
+
     const yRange = useMemo(() => {
-        const validData = signalData.filter(val => val != null && !isNaN(val));
-        
-        if (validData.length === 0) {
+        let min = Infinity;
+        let max = -Infinity;
+        for (let i = 0; i < signalData.length; i++) {
+            const val = signalData[i];
+            if (val != null && !Number.isNaN(val)) {
+                if (val < min) min = val;
+                if (val > max) max = val;
+            }
+        }
+
+        if (!Number.isFinite(min) || !Number.isFinite(max)) {
             return { min: -1, max: 1 };
         }
-        
-        const min = Math.min(...validData);
-        const max = Math.max(...validData);
-        
-        // Added so that flat lines are visible, don't show otherwise
+
         const padding = Math.abs(max - min) * 0.1 || 0.1;
-        return { 
-            min: min - padding, 
-            max: max + padding 
+        return {
+            min: min - padding,
+            max: max + padding
         };
     }, [signalData]);
 
     const chartData = useMemo(() => ({
-        labels: time,
+        labels: timeLabels,
         datasets: [{
             label: 'Vibration Signal',
             data: signalData,
@@ -55,9 +58,9 @@ const VibrationChart = React.memo(function VibrationChart({latestData, title}) {
             borderColor: '#0066ff',
             borderWidth: 2,
             pointRadius: 0,
-            tension: 0, // Explicit no smoothing for performance
+            tension: 0,
         }]
-    }), [signalData, time]);
+    }), [signalData]);
 
     const chartOptions = useMemo(() => ({
         responsive: true,
@@ -98,7 +101,7 @@ const VibrationChart = React.memo(function VibrationChart({latestData, title}) {
                 },
                 ticks: {
                     color: '#000000',
-                    maxTicksLimit: 6, // Ticks limited for performance
+                    maxTicksLimit: 6,
                     callback: (value) => value.toFixed(1),
                 },
                 grid: {
@@ -109,10 +112,11 @@ const VibrationChart = React.memo(function VibrationChart({latestData, title}) {
         },
         animation: false,
         elements: {
-            point: { radius: 0 }, // Ensure no points are drawn
+            point: { radius: 0 },
             line: { borderWidth: 2 }
         }
     }), [yRange]);
+
     return (
         <div className='vibration-chart'>
             <h2>{title}</h2>

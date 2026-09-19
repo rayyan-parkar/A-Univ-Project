@@ -60,7 +60,6 @@ function App() {
     return 'status-disconnected';
   };
 
-  // If not ACTIVE, or Viewer hasn't authenticated yet, show Setup Screen
   if (sessionState !== 'ACTIVE' || role === 'waiting' || role === 'viewer-auth-required' || (role === 'viewer' && sessionState === 'AUTH_REQUIRED')) {
     return (
       <SetupScreen
@@ -75,7 +74,6 @@ function App() {
     );
   }
 
-  // Active Session (Host or authenticated Viewer)
   return (
     <div className="app-container">
       <div className="top-container">
@@ -112,7 +110,6 @@ function App() {
         </div>
 
         <div className="grid-container">
-          {/* --- Left Column --- */}
           <div className="left-column">
 
             {role === 'host' && (
@@ -228,7 +225,6 @@ function App() {
             </div>
           </div>
 
-          {/* --- Right Column --- */}
           <div className="right-column">
             <div style={{ position: 'relative' }}>
               <div className="sop-text">SOP</div>

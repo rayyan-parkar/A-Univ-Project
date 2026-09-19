@@ -134,7 +134,11 @@ export class LiveIngestEngine {
         this.paused = false;
         this.generation += 1;
         if (this.pollInFlightPromise) {
-            try { await this.pollInFlightPromise; } catch { /* ignore */ }
+            try {
+                await this.pollInFlightPromise;
+            } catch {
+                // In-flight poll completed or was cancelled
+            }
         }
         this.resetCursors();
         if (clearDirectory) this.directory = null;
@@ -229,7 +233,9 @@ export class LiveIngestEngine {
             cursor.offset += bytesRead;
             cursor.mtimeMs = info.mtimeMs;
             cursor.carry += new TextDecoder().decode(buffer.subarray(0, bytesRead));
-        } finally { await handle.close(); }
+        } finally {
+            await handle.close();
+        }
         consumeCarry();
         return true;
     }
@@ -239,11 +245,14 @@ export class LiveIngestEngine {
         const vector = FILE_GROUPS.vector;
         const communication = FILE_GROUPS.communication;
         if (this.stopped || this.paused) return;
-        // One frame per poll bounds event-loop work and naturally paces backlog.
+
         if (REQUIRED_FILES.every(name => this.cursors.get(name).rows.length > 0)) {
             const rows = new Map(REQUIRED_FILES.map(name => [name, this.cursors.get(name).rows.shift()]));
             const valid = [...rows.entries()].every(([name, row]) => row !== null && row.length === SHAPES[FILE_KIND.get(name)]);
-            if (!valid) { this.warn('Malformed synchronized live data row discarded; subsequent rows remain aligned.'); return; }
+            if (!valid) {
+                this.warn('Malformed synchronized live data row discarded; subsequent rows remain aligned.');
+                return;
+            }
             const frame = createTelemetryFrame({
                 frameId: this.frameId,
                 timestamp: Date.now(),
@@ -261,10 +270,15 @@ export class LiveIngestEngine {
 
     async poll(run = this.generation) {
         if (this.stopped || this.paused || !this.directory || run !== this.generation) return;
-        if (this.pollInFlightGeneration !== null) { this.schedule(run); return; }
+        if (this.pollInFlightGeneration !== null) {
+            this.schedule(run);
+            return;
+        }
         this.pollInFlightGeneration = run;
         let resolveInFlight;
-        this.pollInFlightPromise = new Promise(resolve => { resolveInFlight = resolve; });
+        this.pollInFlightPromise = new Promise(resolve => {
+            resolveInFlight = resolve;
+        });
         try {
             const recreated = await this.detectRecreation(run);
             if (recreated || run !== this.generation || this.stopped || this.paused) return;

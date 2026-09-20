@@ -22,25 +22,24 @@ export default function SetupScreen({ sessionState, role, authError, configureSe
         claimHost(hostToken.trim());
     };
 
+    let content = null;
+
     if (sessionState === 'CONNECTING') {
-        return (
+        content = (
             <div className="setup-container">
                 <h2>Connecting to the session server...</h2>
+                <p>Establishing connection to the server.</p>
             </div>
         );
-    }
-
-    if (sessionState === 'DISCONNECTED') {
-        return (
+    } else if (sessionState === 'DISCONNECTED') {
+        content = (
             <div className="setup-container">
                 <h2>Reconnecting to server...</h2>
                 <p>The connection will retry automatically.</p>
             </div>
         );
-    }
-
-    if (sessionState === 'CONFIGURING' && role === 'host') {
-        return (
+    } else if (sessionState === 'CONFIGURING' && role === 'host') {
+        content = (
             <div className="setup-container">
                 <h2>You are the Host</h2>
                 <p>Configure the session settings before starting.</p>
@@ -62,10 +61,8 @@ export default function SetupScreen({ sessionState, role, authError, configureSe
                 {authError && <p className="error-text">{authError}</p>}
             </div>
         );
-    }
-
-    if (role === 'waiting') {
-        return (
+    } else if (role === 'waiting') {
+        content = (
             <div className="setup-container">
                 <h2>Waiting for a host</h2>
                 <p>Enter the presenter token to claim host control, or wait for the presenter to configure this room.</p>
@@ -80,12 +77,11 @@ export default function SetupScreen({ sessionState, role, authError, configureSe
                 {streamError && <p className="error-text">{streamError}</p>}
             </div>
         );
-    }
-
-    if (sessionState === 'AUTH_REQUIRED' || (sessionState === 'ACTIVE' && role === 'viewer-auth-required')) {
-        return (
+    } else if (sessionState === 'AUTH_REQUIRED' || (sessionState === 'ACTIVE' && role === 'viewer-auth-required')) {
+        content = (
             <div className="setup-container">
                 <h2>Authentication Required</h2>
+                <p>Enter the session password to join.</p>
                 <form onSubmit={handleAuth} className="setup-form">
                     <label>
                         Session Password:
@@ -98,5 +94,11 @@ export default function SetupScreen({ sessionState, role, authError, configureSe
         );
     }
 
-    return null;
+    if (!content) return null;
+
+    return (
+        <div className="setup-page">
+            {content}
+        </div>
+    );
 }

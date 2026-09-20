@@ -190,6 +190,15 @@ body {
   background-color: #1d4ed8;
 }
 
+.host-btn.camera-stop-btn {
+  background-color: #dc2626;
+  color: #ffffff;
+}
+
+.host-btn.camera-stop-btn:hover {
+  background-color: #b91c1c;
+}
+
 .host-btn.data-start-btn {
   background-color: #16a34a;
   color: #ffffff;
@@ -438,4 +447,126 @@ footer p {
   font-weight: bold;
   color: #000000;
   text-align: right;
+}
+
+/* ==========================================================================
+   Error Messages
+   ========================================================================== */
+.error-text {
+  color: #dc2626;
+  font-size: 13px;
+  margin: 8px 0 0 0;
+}
+
+.video-container .error-text {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  right: 10px;
+  background-color: rgba(0, 0, 0, 0.75);
+  padding: 6px 10px;
+  border-radius: 4px;
+  color: #fca5a5;
+  text-align: center;
+  margin: 0;
+}
+
+/* ==========================================================================
+   Setup & Authentication Screens
+   ========================================================================== */
+.setup-page {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #ffffff;
+  padding: 20px;
+}
+
+.setup-container {
+  width: 100%;
+  max-width: 440px;
+  background-color: #f8f9fa;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+}
+
+.setup-container h2 {
+  margin: 0 0 6px 0;
+  font-size: 1.25rem;
+  font-weight: bold;
+  color: #000000;
+  text-align: left;
+}
+
+.setup-container p {
+  margin: 0 0 16px 0;
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.5;
+  text-align: left;
+}
+
+.setup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.setup-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: bold;
+  color: #334155;
+}
+
+.setup-form input {
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  padding: 8px 10px;
+  font-size: 13px;
+  border-radius: 6px;
+  color: #1e293b;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease;
+  width: 100%;
+}
+
+.setup-form input::placeholder {
+  color: #94a3b8;
+}
+
+.setup-form input:focus {
+  border-color: #2563eb;
+}
+
+.setup-form button {
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: bold;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  background-color: #2563eb;
+  color: #ffffff;
+  transition: background-color 0.15s ease;
+  margin-top: 4px;
+  align-self: flex-start;
+}
+
+.setup-form button:hover:not(:disabled) {
+  background-color: #1d4ed8;
+}
+
+.setup-form button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background-color: #94a3b8;
 }

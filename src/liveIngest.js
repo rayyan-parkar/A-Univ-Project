@@ -8,6 +8,7 @@ export const DEFAULT_POLL_INTERVAL_MS = 33;
 export const MAX_READ_CHUNK_BYTES = 64 * 1024;
 export const MAX_QUEUE_ROWS = 256;
 export const MAX_CARRY_BYTES = 256 * 1024;
+export const MAX_FRAMES_PER_POLL = 4;
 
 const FILE_KIND = new Map([
     ...FILE_GROUPS.waveform.map(name => [name, 'waveform']),
@@ -33,13 +34,15 @@ function emptyCursor(name) {
  * from every file so one bad measurement cannot wedge the stream forever.
  */
 export class LiveIngestEngine {
-    constructor({ onFrame, onStatus, onWarning, pollIntervalMs = DEFAULT_POLL_INTERVAL_MS, maxQueueRows = MAX_QUEUE_ROWS, maxReadBytes = MAX_READ_CHUNK_BYTES } = {}) {
+    constructor({ onFrame, onStatus, onWarning, pollIntervalMs = DEFAULT_POLL_INTERVAL_MS, maxQueueRows = MAX_QUEUE_ROWS, maxReadBytes = MAX_READ_CHUNK_BYTES, maxFramesPerPoll = MAX_FRAMES_PER_POLL } = {}) {
         this.onFrame = onFrame || (() => {});
         this.onStatus = onStatus || (() => {});
         this.onWarning = onWarning || (() => {});
         this.pollIntervalMs = Math.max(1, pollIntervalMs);
         this.maxQueueRows = Math.max(8, maxQueueRows);
         this.maxReadBytes = Math.min(MAX_READ_CHUNK_BYTES, Math.max(1024, maxReadBytes));
+        const requestedMaxFrames = Number.isFinite(maxFramesPerPoll) ? Math.floor(maxFramesPerPoll) : MAX_FRAMES_PER_POLL;
+        this.maxFramesPerPoll = Math.min(MAX_FRAMES_PER_POLL, Math.max(1, requestedMaxFrames));
         this.directory = null;
         this.cursors = new Map(REQUIRED_FILES.map(name => [name, emptyCursor(name)]));
         this.frameId = 0;
@@ -53,6 +56,7 @@ export class LiveIngestEngine {
         this.lastRuntimeError = '';
         this.lastRuntimeErrorAt = 0;
         this.generation = 0;
+        this.pauseReason = null;
     }
 
     status(status, detail) {
@@ -96,32 +100,44 @@ export class LiveIngestEngine {
         }, this.pollIntervalMs);
     }
 
-    async start(directory) {
+    async start(directory, { reclaim = false } = {}) {
         const resolved = await this.validateDirectory(directory);
-        await this.stop(false);
+        const sameDirectory = this.directory === resolved;
+        if (sameDirectory && !this.stopped && !this.paused) return { directory: resolved, resumed: false };
+        if (sameDirectory && !this.stopped && this.paused && reclaim && this.pauseReason === 'reconnect') {
+            this.resume();
+            return { directory: resolved, resumed: true };
+        }
+        // A brand-new engine has no generation to terminate; avoid emitting a
+        // misleading Stopped event before its first Starting event.
+        if (!this.stopped || this.paused || this.directory !== null) await this.stop(false);
         this.directory = resolved;
         this.resetCursors();
         this.frameId = 0;
         this.stopped = false;
         this.paused = false;
+        this.pauseReason = null;
         this.status(LIVE_STATUS.STARTING, { directory: resolved });
         this.status(LIVE_STATUS.RUNNING, { directory: resolved });
         this.schedule();
         return { directory: resolved };
     }
 
-    pause() {
-        if (this.stopped || this.paused) return;
+    pause(reason = 'manual') {
+        if (this.stopped || this.paused) return false;
         this.paused = true;
+        this.pauseReason = reason;
         this.generation += 1;
         if (this.timer) clearTimeout(this.timer);
         this.timer = null;
         this.status(LIVE_STATUS.PAUSED, { directory: this.directory });
+        return true;
     }
 
     resume() {
         if (this.stopped || !this.paused) return;
         this.paused = false;
+        this.pauseReason = null;
         this.generation += 1;
         this.status(LIVE_STATUS.RUNNING, { directory: this.directory });
         this.schedule();
@@ -132,6 +148,7 @@ export class LiveIngestEngine {
         this.timer = null;
         this.stopped = true;
         this.paused = false;
+        this.pauseReason = null;
         this.generation += 1;
         if (this.pollInFlightPromise) {
             try {
@@ -240,18 +257,20 @@ export class LiveIngestEngine {
         return true;
     }
 
-    emitFrames() {
+    emitFrames(maxFrames = this.maxFramesPerPoll, run = this.generation) {
         const waveform = FILE_GROUPS.waveform;
         const vector = FILE_GROUPS.vector;
         const communication = FILE_GROUPS.communication;
         if (this.stopped || this.paused) return;
 
-        if (REQUIRED_FILES.every(name => this.cursors.get(name).rows.length > 0)) {
+        let processed = 0;
+        while (processed < maxFrames && run === this.generation && !this.stopped && !this.paused && REQUIRED_FILES.every(name => this.cursors.get(name).rows.length > 0)) {
             const rows = new Map(REQUIRED_FILES.map(name => [name, this.cursors.get(name).rows.shift()]));
+            processed += 1;
             const valid = [...rows.entries()].every(([name, row]) => row !== null && row.length === SHAPES[FILE_KIND.get(name)]);
             if (!valid) {
                 this.warn('Malformed synchronized live data row discarded; subsequent rows remain aligned.');
-                return;
+                continue;
             }
             const frame = createTelemetryFrame({
                 frameId: this.frameId,
@@ -284,7 +303,7 @@ export class LiveIngestEngine {
             if (recreated || run !== this.generation || this.stopped || this.paused) return;
             await Promise.all([...this.cursors.values()].map(cursor => this.readCursor(cursor, run)));
             if (run !== this.generation || this.stopped || this.paused) return;
-            this.emitFrames();
+            this.emitFrames(this.maxFramesPerPoll, run);
             if (this.lastRuntimeError) {
                 this.lastRuntimeError = '';
                 this.status(LIVE_STATUS.RUNNING, { directory: this.directory });

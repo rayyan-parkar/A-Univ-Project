@@ -1,15 +1,41 @@
 import assert from 'node:assert/strict';
 import { after, afterEach, before, test } from 'node:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { WebSocket } from 'ws';
 import { createServer, normalizeIp, normalizeWhitelist, validateMessage } from '../src/server.js';
+import { REQUIRED_FILES } from '../src/liveIngest.js';
 
 const apps = [];
 let staticFixture;
+
+const liveRowFor = index => ({
+    VibrationData: `${index} ${index + 0.1}`,
+    VibrationData_FPGA: `${index + 0.2} ${index + 0.3}`,
+    SphericalData_low: `${index} ${index + 1} ${index + 2} ${index + 3} ${index + 4} ${index + 5} ${index + 6} ${index + 7} ${index + 8}`,
+    SphericalData_medium: `${index + 10} ${index + 11} ${index + 12} ${index + 13} ${index + 14} ${index + 15} ${index + 16} ${index + 17} ${index + 18}`,
+    SphericalData_high: `${index + 20} ${index + 21} ${index + 22} ${index + 23} ${index + 24} ${index + 25} ${index + 26} ${index + 27} ${index + 28}`,
+    CommunicationData_low: `${index + 30} ${index + 31}`,
+    CommunicationData_medium: `${index + 32} ${index + 33}`,
+    CommunicationData_high: `${index + 34} ${index + 35}`
+});
+
+async function createLiveFixture() {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'phase4-server-live-'));
+    await Promise.all(REQUIRED_FILES.map(name => writeFile(path.join(directory, name), '')));
+    return directory;
+}
+
+async function appendLiveRow(directory, index) {
+    const row = liveRowFor(index);
+    await Promise.all(REQUIRED_FILES.map(name => {
+        const key = name.replace(/\.txt$/, '');
+        return appendFile(path.join(directory, name), `${row[key]}\n`);
+    }));
+}
 
 before(async () => {
     staticFixture = await mkdtemp(path.join(os.tmpdir(), 'phase1-static-'));
@@ -225,6 +251,45 @@ test('reclaims a disconnected host during grace and promotes outage waiters', as
     send(replacement.ws, { type: 'waveform', data: [1, 2] });
     assert.deepEqual(await viewer.next(), { type: 'waveform', data: [1, 2] });
     replacement.ws.close(); waiter.ws.close(); viewer.ws.close();
+});
+
+test('reclaims active live ingest during host grace without replaying rows', async () => {
+    const directory = await createLiveFixture();
+    try {
+        for (let index = 0; index < 6; index += 1) await appendLiveRow(directory, index);
+        const { url } = await startTestServer({ hostReconnectGraceMs: 1000, heartbeatIntervalMs: 1000, heartbeatTimeoutMs: 3000 });
+        const host = await connect(url);
+        await host.next();
+        send(host.ws, { type: 'claim-host', token: '0123456789abcdef' });
+        await host.next();
+        send(host.ws, { type: 'configure', maxClients: 2, password: 'secret', whitelist: [] });
+        await host.next();
+
+        send(host.ws, { type: 'start-live-ingest', dir: directory });
+        assert.deepEqual(await host.next(), { type: 'live-ingest-status', status: 'Starting' });
+        assert.deepEqual(await host.next(), { type: 'live-ingest-status', status: 'Running' });
+        const initialFrames = [];
+        for (let index = 0; index < 4; index += 1) initialFrames.push(await host.next());
+        assert.deepEqual(initialFrames.map(frame => [frame.frameId, frame.waveform[0]]), [[0, 0], [1, 1], [2, 2], [3, 3]]);
+
+        const hostClosed = new Promise(resolve => host.ws.once('close', resolve));
+        host.ws.close();
+        await hostClosed;
+
+        const replacement = await connect(url);
+        assert.deepEqual(await replacement.next(), { type: 'server-state', state: 'ACTIVE', role: 'waiting' });
+        send(replacement.ws, { type: 'claim-host', token: '0123456789abcdef' });
+        assert.deepEqual(await replacement.next(), { type: 'server-state', state: 'ACTIVE', role: 'host' });
+        send(replacement.ws, { type: 'start-live-ingest', dir: directory });
+        assert.deepEqual(await replacement.next(), { type: 'live-ingest-status', status: 'Running' });
+        const resumedFrames = [await replacement.next(), await replacement.next()];
+        assert.deepEqual(resumedFrames.map(frame => [frame.frameId, frame.waveform[0]]), [[4, 4], [5, 5]]);
+        send(replacement.ws, { type: 'stop-live-ingest' });
+        assert.deepEqual(await replacement.next(), { type: 'live-ingest-status', status: 'Stopped' });
+        replacement.ws.close();
+    } finally {
+        await rm(directory, { recursive: true, force: true });
+    }
 });
 
 test('grace expiry resets the room after host loss', async () => {

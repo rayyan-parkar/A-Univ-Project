@@ -405,29 +405,39 @@ export function createServer({ staticDir = DEFAULT_STATIC_DIR, logger = console,
         safeSend(hostSocket, message, false);
     }
     async function stopLiveIngest({ pause = false } = {}) {
-        if (!liveIngestEngine) return;
+        const engine = liveIngestEngine;
+        if (!engine) return false;
         if (pause) {
-            liveIngestEngine.pause();
-            broadcastLiveStatus(LIVE_STATUS.PAUSED);
-            return;
+            engine.pause('reconnect');
+            return true;
         }
-        await liveIngestEngine.stop();
+        // Detach the terminal generation before awaiting any in-flight poll so
+        // a session reset cannot accidentally reclaim it in a new session.
         liveIngestEngine = null;
         liveIngestDirectory = null;
         latestTelemetryFrame = null;
+        await engine.stop();
+        return true;
     }
     async function startLiveIngest(dirPath) {
         const requestedDirectory = dirPath || './src/data';
         if (liveIngestEngine && liveIngestDirectory !== path.resolve(process.cwd(), requestedDirectory)) await stopLiveIngest();
         if (!liveIngestEngine) {
-            liveIngestEngine = new LiveIngestEngine({
-                onFrame: frame => broadcastPayload(frame),
-                onStatus: event => broadcastLiveStatus(event.status, event.status === LIVE_STATUS.ERROR ? 'Live ingest encountered a read error' : undefined),
-                onWarning: event => (logger.warn || logger.error || (() => {}))(`Live ingest warning: ${event.message}`)
+            const engine = new LiveIngestEngine({
+                onFrame: frame => {
+                    if (liveIngestEngine === engine) broadcastPayload(frame);
+                },
+                onStatus: event => {
+                    if (liveIngestEngine === engine) broadcastLiveStatus(event.status, event.status === LIVE_STATUS.ERROR ? 'Live ingest encountered a read error' : undefined);
+                },
+                onWarning: event => {
+                    if (liveIngestEngine === engine) (logger.warn || logger.error || (() => {}))(`Live ingest warning: ${event.message}`);
+                }
             });
+            liveIngestEngine = engine;
         }
         try {
-            const result = await liveIngestEngine.start(requestedDirectory);
+            const result = await liveIngestEngine.start(requestedDirectory, { reclaim: true });
             liveIngestDirectory = result.directory;
         } catch (error) {
             broadcastLiveStatus(LIVE_STATUS.ERROR, 'Live data directory or files are not available');

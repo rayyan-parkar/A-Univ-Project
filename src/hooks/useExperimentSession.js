@@ -5,6 +5,20 @@ export const RECONNECT_BASE_MS = 250;
 export const RECONNECT_MAX_MS = 8000;
 export const MAX_DELAY_QUEUE = 240;
 
+/**
+ * Append one complete delayed telemetry packet while retaining only the
+ * newest bounded window. Mutating the supplied queue keeps the ref stable and
+ * makes overflow safe even when animation frames are paused.
+ */
+export function enqueueDelayedFrame(queue, packet, targetRenderTime, maxQueue = MAX_DELAY_QUEUE) {
+    if (!Array.isArray(queue)) return queue;
+    const requestedCap = Number.isFinite(maxQueue) ? Math.floor(maxQueue) : MAX_DELAY_QUEUE;
+    const cap = Math.min(MAX_DELAY_QUEUE, Math.max(1, requestedCap));
+    queue.push({ packet, targetRenderTime });
+    if (queue.length > cap) queue.splice(0, queue.length - cap);
+    return queue;
+}
+
 export function reconnectDelay(attempt, random = Math.random()) {
     const exponent = Math.min(Math.max(0, attempt), 8);
     const capped = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * (2 ** exponent));
@@ -321,13 +335,11 @@ export function useExperimentSession() {
                     if (syncDelayRef.current <= 0) {
                         pendingDirectFrameRef.current = parsed;
                     } else {
-                        if (queueRef.current.length >= MAX_DELAY_QUEUE) {
-                            queueRef.current.splice(0, Math.ceil(MAX_DELAY_QUEUE / 4));
-                        }
-                        queueRef.current.push({
-                            packet: parsed,
-                            targetRenderTime: Date.now() + syncDelayRef.current,
-                        });
+                        enqueueDelayedFrame(
+                            queueRef.current,
+                            parsed,
+                            Date.now() + syncDelayRef.current,
+                        );
                     }
                 }
             };
@@ -371,10 +383,11 @@ export function useExperimentSession() {
             if (syncDelayRef.current <= 0) {
                 pendingDirectFrameRef.current = payloads;
             } else {
-                queueRef.current.push({
-                    packet: payloads,
-                    targetRenderTime: Date.now() + syncDelayRef.current,
-                });
+                enqueueDelayedFrame(
+                    queueRef.current,
+                    payloads,
+                    Date.now() + syncDelayRef.current,
+                );
             }
         } else {
             if (payloads.waveformData) applyPacket({ type: 'waveform', data: payloads.waveformData });

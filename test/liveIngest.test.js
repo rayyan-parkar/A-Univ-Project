@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { appendFile, mkdtemp, rm, truncate, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { LiveIngestEngine, REQUIRED_FILES } from '../src/liveIngest.js';
+import { LiveIngestEngine, MAX_FRAMES_PER_POLL, REQUIRED_FILES } from '../src/liveIngest.js';
 
 const names = REQUIRED_FILES;
 const filesFor = directory => Object.fromEntries(names.map(name => [name, path.join(directory, name)]));
@@ -32,7 +32,7 @@ async function appendRow(files, index, { newline = true } = {}) {
 }
 
 async function makeEngine(directory, frames, warnings = []) {
-    const engine = new LiveIngestEngine({ directory, onFrame: frame => frames.push(frame), onWarning: warning => warnings.push(warning), pollIntervalMs: 100000 });
+    const engine = new LiveIngestEngine({ directory, onFrame: frame => frames.push(frame), onWarning: warning => warnings.push(warning), pollIntervalMs: 100000, maxFramesPerPoll: 1 });
     await engine.start(directory);
     return engine;
 }
@@ -45,6 +45,69 @@ test('reads coherent initial and incrementally appended rows', async () => {
         await engine.poll();
         assert.equal(frames.length, 1); assert.equal(frames[0].frameId, 0); assert.equal(frames[0].waveform[0], 0);
         await engine.poll(); assert.equal(frames.length, 2); assert.equal(frames[1].frameId, 1);
+        await engine.stop();
+    } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('bounds per-poll catch-up while preserving ordered frame IDs and data', async () => {
+    const { directory, files } = await fixture();
+    try {
+        for (let index = 0; index < 5; index += 1) await appendRow(files, index);
+        const frames = [];
+        const engine = new LiveIngestEngine({
+            onFrame: frame => frames.push(frame),
+            pollIntervalMs: 100000,
+            maxFramesPerPoll: 2
+        });
+        await engine.start(directory);
+        await engine.poll();
+        assert.deepEqual(frames.map(frame => [frame.frameId, frame.waveform[0]]), [[0, 0], [1, 1]]);
+        await engine.poll();
+        assert.deepEqual(frames.map(frame => [frame.frameId, frame.waveform[0]]), [[0, 0], [1, 1], [2, 2], [3, 3]]);
+        await engine.poll();
+        assert.deepEqual(frames.map(frame => [frame.frameId, frame.waveform[0]]), [[0, 0], [1, 1], [2, 2], [3, 3], [4, 4]]);
+        await engine.stop();
+    } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('keeps the per-poll frame cap bounded for invalid configuration', () => {
+    assert.equal(new LiveIngestEngine({ maxFramesPerPoll: Number.NaN }).maxFramesPerPoll, MAX_FRAMES_PER_POLL);
+    assert.equal(new LiveIngestEngine({ maxFramesPerPoll: Number.POSITIVE_INFINITY }).maxFramesPerPoll, MAX_FRAMES_PER_POLL);
+    assert.equal(new LiveIngestEngine({ maxFramesPerPoll: Number.MAX_SAFE_INTEGER }).maxFramesPerPoll, MAX_FRAMES_PER_POLL);
+});
+
+test('reclaims a reconnect pause without replaying rows or resetting frame IDs', async () => {
+    const { directory, files } = await fixture();
+    try {
+        await appendRow(files, 0); await appendRow(files, 1);
+        const frames = [];
+        const engine = new LiveIngestEngine({ onFrame: frame => frames.push(frame), pollIntervalMs: 100000, maxFramesPerPoll: 2 });
+        await engine.start(directory);
+        await engine.poll();
+        assert.deepEqual(frames.map(frame => frame.frameId), [0, 1]);
+        assert.deepEqual(await engine.start(directory), { directory: path.resolve(directory), resumed: false });
+        engine.pause('reconnect');
+        await appendRow(files, 2); await appendRow(files, 3);
+        assert.deepEqual(await engine.start(directory, { reclaim: true }), { directory: path.resolve(directory), resumed: true });
+        await engine.poll();
+        assert.deepEqual(frames.map(frame => [frame.frameId, frame.waveform[0]]), [[0, 0], [1, 1], [2, 2], [3, 3]]);
+        await engine.stop();
+    } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('explicit stop followed by start resets cursors and frame IDs', async () => {
+    const { directory, files } = await fixture();
+    try {
+        await appendRow(files, 0);
+        const frames = [];
+        const engine = await makeEngine(directory, frames);
+        await engine.poll();
+        await engine.stop();
+        await Promise.all(names.map(name => truncate(files[name], 0)));
+        await appendRow(files, 9);
+        await engine.start(directory);
+        await engine.poll();
+        assert.deepEqual(frames.map(frame => [frame.frameId, frame.waveform[0]]), [[0, 0], [0, 9]]);
         await engine.stop();
     } finally { await rm(directory, { recursive: true, force: true }); }
 });

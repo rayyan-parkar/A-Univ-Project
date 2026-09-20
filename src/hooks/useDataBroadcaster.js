@@ -21,6 +21,22 @@ export function useDataBroadcaster(socketRef, onLocalData, socketEpoch = 0, sess
     sessionReadyRef.current = sessionReady;
   }, [sessionReady]);
 
+  const clearDebugInterval = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (sessionReady || broadcastMode === 'live') return;
+    clearDebugInterval();
+    if (!isBroadcasting && !isStarting) return;
+    setIsStarting(false);
+    setIsBroadcasting(false);
+    setStatusMessage('Broadcast stopped: session unavailable');
+  }, [broadcastMode, clearDebugInterval, isBroadcasting, isStarting, sessionReady]);
+
   useEffect(() => {
     if (!liveStatus || broadcastMode !== 'live') return;
     if (liveStatus.status === 'Error') {
@@ -102,18 +118,25 @@ export function useDataBroadcaster(socketRef, onLocalData, socketEpoch = 0, sess
   };
 
   const startBroadcasting = useCallback(() => {
+    if (broadcastMode !== 'live' && !sessionReady) {
+      setIsStarting(false);
+      setIsBroadcasting(false);
+      setStatusMessage('Broadcast unavailable: session not ready');
+      return;
+    }
     if (broadcastMode === 'live') {
       setIsStarting(true);
       setStatusMessage(`Starting live ingest from ${liveDir}`);
       sendLiveStart();
     } else {
+      if (intervalRef.current) return;
       setIsStarting(false);
       setIsBroadcasting(true);
       setStatusMessage('Broadcasting synthetic data');
       stepRef.current = 0;
-      if (intervalRef.current) clearInterval(intervalRef.current);
 
       intervalRef.current = setInterval(() => {
+        if (!sessionReadyRef.current) return;
         stepRef.current += 1;
         const step = stepRef.current;
         const payloads = generateDebugPayloads(step);
@@ -138,13 +161,10 @@ export function useDataBroadcaster(socketRef, onLocalData, socketEpoch = 0, sess
         }
       }, 33);
     }
-  }, [broadcastMode, liveDir, onLocalData, sendLiveStart, socketRef]);
+  }, [broadcastMode, liveDir, onLocalData, sendLiveStart, sessionReady, socketRef]);
 
   const stopBroadcasting = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
+    clearDebugInterval();
 
     const socket = socketRef?.current;
     if (socket && socket.readyState === 1) {
@@ -159,15 +179,13 @@ export function useDataBroadcaster(socketRef, onLocalData, socketEpoch = 0, sess
     setIsBroadcasting(false);
     liveSocketRef.current = null;
     setStatusMessage('Broadcast stopped');
-  }, [socketRef]);
+  }, [clearDebugInterval, socketRef]);
 
   useEffect(() => {
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
+      clearDebugInterval();
     };
-  }, []);
+  }, [clearDebugInterval]);
 
   return {
     broadcastMode,

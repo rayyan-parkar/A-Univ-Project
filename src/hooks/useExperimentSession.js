@@ -1,23 +1,22 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { isTelemetryFrame } from '../telemetryProtocol.js';
+import {
+    addClockSample,
+    captureTimeToEpoch,
+    clockEstimate,
+    createClockEstimator,
+    createSyncState,
+    enqueueSyncPacket,
+    fallbackSyncFrame,
+    presentVideoFrame,
+    presentVideoReceiveTime,
+    receiveTimeToEpoch,
+    resetClockEstimator,
+    resetSyncState,
+} from '../avSync.js';
 
 export const RECONNECT_BASE_MS = 250;
 export const RECONNECT_MAX_MS = 8000;
-export const MAX_DELAY_QUEUE = 240;
-
-/**
- * Append one complete delayed telemetry packet while retaining only the
- * newest bounded window. Mutating the supplied queue keeps the ref stable and
- * makes overflow safe even when animation frames are paused.
- */
-export function enqueueDelayedFrame(queue, packet, targetRenderTime, maxQueue = MAX_DELAY_QUEUE) {
-    if (!Array.isArray(queue)) return queue;
-    const requestedCap = Number.isFinite(maxQueue) ? Math.floor(maxQueue) : MAX_DELAY_QUEUE;
-    const cap = Math.min(MAX_DELAY_QUEUE, Math.max(1, requestedCap));
-    queue.push({ packet, targetRenderTime });
-    if (queue.length > cap) queue.splice(0, queue.length - cap);
-    return queue;
-}
 
 export function reconnectDelay(attempt, random = Math.random()) {
     const exponent = Math.min(Math.max(0, attempt), 8);
@@ -71,11 +70,14 @@ export function useExperimentSession() {
 
     const [latestFrame, setLatestFrame] = useState(null);
     const [liveIngestStatus, setLiveIngestStatus] = useState(null);
-    const [syncDelayMs, setSyncDelayMs] = useState(100);
+    const [syncStatus, setSyncStatus] = useState('Fallback');
 
-    const syncDelayRef = useRef(100);
-    const queueRef = useRef([]);
-    const pendingDirectFrameRef = useRef(null);
+    const syncStateRef = useRef(createSyncState());
+    const clockEstimatorRef = useRef(createClockEstimator());
+    const clockRequestRef = useRef(0);
+    const clockRequestsRef = useRef(new Map());
+    const videoCleanupRef = useRef(null);
+    const clockTimerRef = useRef(null);
     const socketRef = useRef(null);
     const mountedRef = useRef(false);
     const reconnectTimerRef = useRef(null);
@@ -93,11 +95,17 @@ export function useExperimentSession() {
         }
     }, []);
 
-    useEffect(() => {
-        syncDelayRef.current = syncDelayMs;
-        queueRef.current = [];
-        pendingDirectFrameRef.current = null;
-    }, [syncDelayMs]);
+    const resetSynchronization = useCallback((status = 'Fallback') => {
+        resetSyncState(syncStateRef.current);
+        resetClockEstimator(clockEstimatorRef.current);
+        clockRequestsRef.current.clear();
+        setSyncStatus(status);
+    }, []);
+
+    const resetPresentationSynchronization = useCallback(() => {
+        resetSyncState(syncStateRef.current);
+        setSyncStatus('Fallback');
+    }, []);
 
     const applyPacket = useCallback((parsed) => {
         if (!parsed) return;
@@ -151,35 +159,10 @@ export function useExperimentSession() {
         }
     }, []);
 
-    useEffect(() => {
-        let animId;
-
-        const flushQueue = () => {
-            const now = Date.now();
-            let latestDue = null;
-
-            if (syncDelayRef.current <= 0) {
-                if (pendingDirectFrameRef.current) {
-                    latestDue = pendingDirectFrameRef.current;
-                    pendingDirectFrameRef.current = null;
-                }
-            } else {
-                const queue = queueRef.current;
-                while (queue.length > 0 && now >= queue[0].targetRenderTime) {
-                    latestDue = queue.shift().packet;
-                }
-            }
-
-            if (latestDue) {
-                applyPacket(latestDue);
-            }
-
-            animId = requestAnimationFrame(flushQueue);
-        };
-
-        animId = requestAnimationFrame(flushQueue);
-        return () => cancelAnimationFrame(animId);
-    }, [applyPacket]);
+    const queueTelemetry = useCallback((packet) => {
+        if (!packet) return;
+        enqueueSyncPacket(syncStateRef.current, packet, Date.now());
+    }, []);
 
     const send = useCallback((message) => {
         const socket = socketRef.current;
@@ -191,6 +174,106 @@ export function useExperimentSession() {
             return false;
         }
     }, []);
+
+    const requestClockSync = useCallback(() => {
+        const socket = socketRef.current;
+        if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+        const requestId = ++clockRequestRef.current;
+        const clientSend = Date.now();
+        clockRequestsRef.current.set(requestId, clientSend);
+        // Keep outstanding requests bounded if a browser/network silently
+        // loses a response.
+        if (clockRequestsRef.current.size > 8) {
+            const oldest = clockRequestsRef.current.keys().next().value;
+            clockRequestsRef.current.delete(oldest);
+        }
+        return send({ type: 'clock-sync-request', requestId, clientSend });
+    }, [send]);
+
+    const handlePresentedVideoFrame = useCallback((metadata) => {
+        const now = Date.now();
+        let timeOrigin = null;
+        try {
+            timeOrigin = Number(window.performance?.timeOrigin);
+        } catch {
+            timeOrigin = null;
+        }
+        const captureEpoch = captureTimeToEpoch(metadata, { timeOrigin, now });
+        if (captureEpoch !== null) {
+            const packet = presentVideoFrame(
+                syncStateRef.current,
+                captureEpoch,
+                now,
+                clockEstimate(clockEstimatorRef.current),
+            );
+            if (packet) applyPacket(packet);
+            setSyncStatus(syncStateRef.current.mode === 'auto' ? 'Auto' : 'Fallback');
+            return;
+        }
+        const receiveEpoch = receiveTimeToEpoch(metadata, { timeOrigin, now });
+        if (receiveEpoch === null) {
+            syncStateRef.current.lastVideoAt = null;
+            setSyncStatus('Fallback');
+            return;
+        }
+        const packet = presentVideoReceiveTime(
+            syncStateRef.current,
+            receiveEpoch,
+            now,
+        );
+        if (packet) applyPacket(packet);
+        setSyncStatus(syncStateRef.current.mode === 'estimated' ? 'Estimated' : 'Fallback');
+    }, [applyPacket]);
+
+    const registerVideoElement = useCallback((video) => {
+        videoCleanupRef.current?.();
+        videoCleanupRef.current = null;
+        resetPresentationSynchronization();
+        if (!video) return;
+
+        const requestFrame = video.requestVideoFrameCallback?.bind(video);
+        const cancelFrame = video.cancelVideoFrameCallback?.bind(video);
+        if (!requestFrame) {
+            setSyncStatus('Fallback');
+            return;
+        }
+
+        let active = true;
+        let callbackId = null;
+        const onFrame = (_now, metadata) => {
+            if (!active) return;
+            handlePresentedVideoFrame(metadata);
+            try {
+                callbackId = requestFrame(onFrame);
+            } catch {
+                active = false;
+                setSyncStatus('Fallback');
+            }
+        };
+        try {
+            callbackId = requestFrame(onFrame);
+        } catch {
+            setSyncStatus('Fallback');
+            return;
+        }
+        videoCleanupRef.current = () => {
+            active = false;
+            if (callbackId !== null && cancelFrame) {
+                try { cancelFrame(callbackId); } catch { /* already cancelled */ }
+            }
+        };
+    }, [handlePresentedVideoFrame, resetPresentationSynchronization]);
+
+    useEffect(() => {
+        let animationId;
+        const flushFallback = () => {
+            const packet = fallbackSyncFrame(syncStateRef.current, Date.now());
+            if (packet) applyPacket(packet);
+            animationId = requestAnimationFrame(flushFallback);
+        };
+        animationId = requestAnimationFrame(flushFallback);
+        return () => cancelAnimationFrame(animationId);
+    }, [applyPacket]);
 
     const configureSession = useCallback((maxClients, password, whitelist) => {
         setAuthError('');
@@ -240,6 +323,12 @@ export function useExperimentSession() {
             }, reconnectDelay(attempt));
         };
 
+        const startClockSync = () => {
+            clearInterval(clockTimerRef.current);
+            requestClockSync();
+            clockTimerRef.current = setInterval(requestClockSync, 10000);
+        };
+
         const connect = () => {
             if (!mountedRef.current || socketRef.current) return;
             const generation = ++socketGenerationRef.current;
@@ -260,6 +349,8 @@ export function useExperimentSession() {
                 reconnectAttemptRef.current = 0;
                 setConnectionStatus('Connected to server.');
                 setSocketEpoch((epoch) => epoch + 1);
+                clearInterval(clockTimerRef.current);
+                clockTimerRef.current = null;
                 if (hostTokenRef.current) {
                     send({ type: 'claim-host', token: hostTokenRef.current });
                 }
@@ -275,7 +366,18 @@ export function useExperimentSession() {
                     return;
                 }
 
-                if (parsed.type === 'server-state') {
+                if (parsed.type === 'clock-sync-response') {
+                    const clientSend = clockRequestsRef.current.get(parsed.requestId);
+                    clockRequestsRef.current.delete(parsed.requestId);
+                    if (Number.isFinite(clientSend)) {
+                        addClockSample(clockEstimatorRef.current, {
+                            clientSend,
+                            serverReceive: parsed.serverReceive,
+                            serverSend: parsed.serverSend,
+                            clientReceive: Date.now(),
+                        });
+                    }
+                } else if (parsed.type === 'server-state') {
                     if (parsed.role === 'host') {
                         setRole('host');
                         setSessionState(parsed.state === 'ACTIVE' ? 'ACTIVE' : 'CONFIGURING');
@@ -303,6 +405,7 @@ export function useExperimentSession() {
                     }
                     setAuthError(parsed.message || 'The server rejected that request.');
                 } else if (parsed.type === 'config-success') {
+                    startClockSync();
                     setGeneratedPassword(parsed.password);
                     setSessionState('ACTIVE');
                     setRole('host');
@@ -312,14 +415,16 @@ export function useExperimentSession() {
                         writeSessionJson(HOST_CONFIG_KEY, hostConfigRef.current);
                     }
                 } else if (parsed.type === 'auth-success') {
+                    startClockSync();
                     setAuthError('');
                     setSessionState('ACTIVE');
                     setRole('viewer');
                 } else if (parsed.type === 'auth-fail') {
                     setAuthError(parsed.message || 'Authentication failed');
                 } else if (parsed.type === 'server-reset') {
-                    queueRef.current = [];
-                    pendingDirectFrameRef.current = null;
+                    clearInterval(clockTimerRef.current);
+                    clockTimerRef.current = null;
+                    resetSynchronization();
                     setLiveIngestStatus(null);
                     setRole('waiting');
                     setSessionState('IDLE');
@@ -332,15 +437,8 @@ export function useExperimentSession() {
                     parsed.type === 'vector' ||
                     parsed.type === 'communication'
                 ) {
-                    if (syncDelayRef.current <= 0) {
-                        pendingDirectFrameRef.current = parsed;
-                    } else {
-                        enqueueDelayedFrame(
-                            queueRef.current,
-                            parsed,
-                            Date.now() + syncDelayRef.current,
-                        );
-                    }
+                    if (isTelemetryFrame(parsed)) queueTelemetry(parsed);
+                    else applyPacket(parsed); // legacy component messages
                 }
             };
 
@@ -353,8 +451,9 @@ export function useExperimentSession() {
             socket.onclose = () => {
                 if (socketGenerationRef.current !== generation) return;
                 socketRef.current = null;
-                queueRef.current = [];
-                pendingDirectFrameRef.current = null;
+                clearInterval(clockTimerRef.current);
+                clockTimerRef.current = null;
+                resetSynchronization();
                 setLiveIngestStatus(null);
                 setSocketEpoch((epoch) => epoch + 1);
                 setSessionState('DISCONNECTED');
@@ -367,6 +466,11 @@ export function useExperimentSession() {
         return () => {
             mountedRef.current = false;
             clearReconnect();
+            clearInterval(clockTimerRef.current);
+            clockTimerRef.current = null;
+            videoCleanupRef.current?.();
+            videoCleanupRef.current = null;
+            resetSynchronization();
             socketGenerationRef.current += 1;
             const socket = socketRef.current;
             socketRef.current = null;
@@ -375,26 +479,18 @@ export function useExperimentSession() {
                 socket.close();
             }
         };
-    }, [applyPacket, configureSession, send]);
+    }, [applyPacket, configureSession, queueTelemetry, requestClockSync, resetSynchronization, send]);
 
     const updateGraphData = useCallback((payloads) => {
         if (!payloads) return;
         if (isTelemetryFrame(payloads)) {
-            if (syncDelayRef.current <= 0) {
-                pendingDirectFrameRef.current = payloads;
-            } else {
-                enqueueDelayedFrame(
-                    queueRef.current,
-                    payloads,
-                    Date.now() + syncDelayRef.current,
-                );
-            }
+            queueTelemetry(payloads);
         } else {
             if (payloads.waveformData) applyPacket({ type: 'waveform', data: payloads.waveformData });
             if (payloads.vectorData) applyPacket({ type: 'vector', data: payloads.vectorData });
             if (payloads.commData) applyPacket({ type: 'communication', data: payloads.commData });
         }
-    }, [applyPacket]);
+    }, [applyPacket, queueTelemetry]);
 
     return {
         socketRef,
@@ -409,8 +505,8 @@ export function useExperimentSession() {
         authenticate,
         send,
         updateGraphData,
-        syncDelayMs,
-        setSyncDelayMs,
+        registerVideoElement,
+        syncStatus,
         latestFrame,
         liveIngestStatus,
         graphData,

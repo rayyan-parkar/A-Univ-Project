@@ -304,35 +304,6 @@ body {
   color: #1d4ed8;
 }
 
-.host-sync-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding-top: 4px;
-  flex-wrap: wrap;
-}
-
-.sync-slider {
-  width: 140px;
-  cursor: pointer;
-}
-
-.sync-value-pill {
-  font-size: 12px;
-  font-weight: bold;
-  background-color: #f1f5f9;
-  border: 1px solid #cbd5e1;
-  padding: 3px 8px;
-  border-radius: 6px;
-  color: #1e293b;
-  font-family: monospace;
-}
-
-.sync-hint {
-  font-size: 11px;
-  color: #64748b;
-}
-
 /* ==========================================================================
    Video Feed Container
    ========================================================================== */

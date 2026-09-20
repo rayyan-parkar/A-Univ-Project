@@ -36,7 +36,7 @@ const OPEN = WebSocket.OPEN;
 const MESSAGE_TYPES = new Set([
     'claim-host', 'configure', 'auth', 'start-live-ingest', 'stop-live-ingest',
     'stop-webrtc-stream', 'webrtc-restart-request', 'webrtc-offer', 'webrtc-answer',
-    'webrtc-ice', 'waveform', 'vector', 'communication', 'telemetry-frame'
+    'webrtc-ice', 'clock-sync-request', 'waveform', 'vector', 'communication', 'telemetry-frame'
 ]);
 
 const MIME_TYPES = {
@@ -194,6 +194,9 @@ export function validateMessage(message) {
             break;
         case 'webrtc-ice':
             if (message.candidate !== null && !validateCandidate(message.candidate)) return { ok: false, code: 'invalid-ice', message: 'ICE candidate is invalid' };
+            break;
+        case 'clock-sync-request':
+            if (boundedInteger(message.requestId, 0, Number.MAX_SAFE_INTEGER) === null || !validFiniteNumber(message.clientSend)) return { ok: false, code: 'invalid-clock-sync', message: 'Clock sync request is invalid' };
             break;
         case 'waveform': case 'vector': case 'communication': {
             const telemetryError = validateTelemetry(message);
@@ -665,9 +668,9 @@ export function createServer({ staticDir = DEFAULT_STATIC_DIR, logger = console,
         const allowed = {
             host: new Set([
                 'configure', 'start-live-ingest', 'stop-live-ingest', 'stop-webrtc-stream',
-                'webrtc-offer', 'webrtc-ice', 'waveform', 'vector', 'communication', 'telemetry-frame'
+                'webrtc-offer', 'webrtc-ice', 'clock-sync-request', 'waveform', 'vector', 'communication', 'telemetry-frame'
             ]),
-            viewer: new Set(['auth', 'webrtc-answer', 'webrtc-ice', 'webrtc-restart-request']),
+            viewer: new Set(['auth', 'webrtc-answer', 'webrtc-ice', 'clock-sync-request', 'webrtc-restart-request']),
             waiting: new Set(['claim-host'])
         };
 
@@ -690,6 +693,9 @@ export function createServer({ staticDir = DEFAULT_STATIC_DIR, logger = console,
             ['webrtc-answer', 'webrtc-ice', 'webrtc-restart-request'].includes(type) &&
             (!client.authenticated || sessionState !== 'ACTIVE')
         ) {
+            return 'Authentication is required';
+        }
+        if (type === 'clock-sync-request' && (!client.authenticated || sessionState !== 'ACTIVE')) {
             return 'Authentication is required';
         }
         return null;
@@ -838,6 +844,11 @@ export function createServer({ staticDir = DEFAULT_STATIC_DIR, logger = console,
             } else if (parsed.type === 'webrtc-ice') {
                 if (client.role === 'host' && hostSocket !== ws) return;
                 await addOrQueueIce(ws, parsed.candidate);
+            } else if (parsed.type === 'clock-sync-request') {
+                const serverReceive = Date.now();
+                const response = { type: 'clock-sync-response', requestId: parsed.requestId, serverReceive };
+                response.serverSend = Date.now();
+                safeSend(ws, response, false);
             } else if (['waveform', 'vector', 'communication', 'telemetry-frame'].includes(parsed.type)) {
                 if (parsed.type === 'telemetry-frame') latestTelemetryFrame = parsed;
                 const raw = typeof message === 'string' ? message : message.toString();

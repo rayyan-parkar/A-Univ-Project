@@ -6,8 +6,6 @@ import path from 'node:path';
 import { WebSocket } from 'ws';
 import { createServer, TELEMETRY_HIGH_WATER_BYTES } from '../src/server.js';
 import {
-    enqueueDelayedFrame,
-    MAX_DELAY_QUEUE,
     reconnectDelay,
     RECONNECT_BASE_MS,
     RECONNECT_MAX_MS,
@@ -230,42 +228,6 @@ test('bounds automatic viewer recovery and stays above server retry rate limit',
     assert.equal(viewerRecoveryDelay(100), VIEWER_RECOVERY_MAX_DELAY_MS);
     assert.equal(viewerRecoveryDelay(Number.NaN), VIEWER_RECOVERY_BASE_MS);
     assert.ok(viewerRecoveryDelay(0) > 500);
-});
-
-test('bounds delayed telemetry enqueue while retaining newest complete frames', () => {
-    const queue = [];
-    enqueueDelayedFrame(queue, { frameId: 1 }, 101, 3);
-    enqueueDelayedFrame(queue, { frameId: 2 }, 102, 3);
-    enqueueDelayedFrame(queue, { frameId: 3 }, 103, 3);
-    assert.deepEqual(queue.map(item => [item.packet.frameId, item.targetRenderTime]), [[1, 101], [2, 102], [3, 103]]);
-
-    enqueueDelayedFrame(queue, { frameId: 4 }, 104, 3);
-    enqueueDelayedFrame(queue, { frameId: 5 }, 105, 3);
-    assert.deepEqual(queue.map(item => item.packet.frameId), [3, 4, 5]);
-    assert.ok(queue.every(item => item.packet && Number.isFinite(item.targetRenderTime)));
-});
-
-test('normalizes invalid or undersized delayed queue caps', () => {
-    const smallQueue = [];
-    enqueueDelayedFrame(smallQueue, { frameId: 1 }, 1, 0);
-    enqueueDelayedFrame(smallQueue, { frameId: 2 }, 2, -4);
-    assert.deepEqual(smallQueue.map(item => item.packet.frameId), [2]);
-
-    const invalidQueue = [];
-    for (let frameId = 0; frameId <= MAX_DELAY_QUEUE; frameId += 1) {
-        enqueueDelayedFrame(invalidQueue, { frameId }, frameId, Number.NaN);
-    }
-    assert.equal(invalidQueue.length, MAX_DELAY_QUEUE);
-    assert.equal(invalidQueue[0].packet.frameId, 1);
-    assert.equal(invalidQueue.at(-1).packet.frameId, MAX_DELAY_QUEUE);
-
-    const oversizedQueue = [];
-    for (let frameId = 0; frameId <= MAX_DELAY_QUEUE + 3; frameId += 1) {
-        enqueueDelayedFrame(oversizedQueue, { frameId }, frameId, MAX_DELAY_QUEUE + 1000);
-    }
-    assert.equal(oversizedQueue.length, MAX_DELAY_QUEUE);
-    assert.equal(oversizedQueue[0].packet.frameId, 4);
-    assert.equal(oversizedQueue.at(-1).packet.frameId, MAX_DELAY_QUEUE + 3);
 });
 
 test('validates telemetry frames efficiently under high frequency generation', () => {

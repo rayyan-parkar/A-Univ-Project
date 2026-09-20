@@ -183,6 +183,19 @@ The viewer dashboard displays:
 * Low-, medium-, and high-precision constellation plots
 * Connection and stream status
 
+Graphs use automatic video-presentation synchronization when the browser
+supports `HTMLVideoElement.requestVideoFrameCallback`. The **Auto** mode uses
+the presented frame's DOM `captureTime` and a bounded NTP-style WebSocket clock
+estimate to match complete application-owned telemetry frames by source
+timestamp. Some relays/browsers omit a usable capture time; when a valid DOM
+`receiveTime` is available, **Estimated** mode matches video receive time to
+the local WebSocket arrival time of each complete telemetry packet. Estimated
+mode is transport-relative and does not claim source-capture precision. If
+neither time is usable, the tab is backgrounded, or a packet misses the bounded
+hold window, **Fallback** continues rendering recent telemetry. There is no
+manual A/V delay control. The synchronization layer does not change telemetry
+values, normalization, or application frame IDs.
+
 If a transient WebRTC peer or signaling failure interrupts the video stream, the viewer automatically requests recovery with bounded backoff. Intentional host camera stops remain inactive until the host starts the camera again.
 
 ---
@@ -252,11 +265,9 @@ npm test
 
 Current test suite:
 
-```text
-24 tests
-24 passing
-0 failing
-```
+Run `npm test` to execute the complete test suite; it includes deterministic
+automatic A/V synchronization tests in addition to the server and ingest
+tests below.
 
 The automated tests cover areas including:
 
@@ -278,6 +289,7 @@ The automated tests cover areas including:
 * Stream restart rate limiting
 * Reconnection backoff
 * High-frequency telemetry validation
+* Automatic exact/estimated video-telemetry timing, bounded queues, clock-offset estimation, and fallback behaviour
 
 ---
 

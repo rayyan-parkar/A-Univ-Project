@@ -144,9 +144,18 @@ test('requires an explicit host claim, validates configuration, and authenticate
 
     const viewer = await connect(url);
     assert.deepEqual(await viewer.next(), { type: 'server-state', state: 'ACTIVE', role: 'viewer-auth-required' });
+    assert.equal(validateMessage({ type: 'clock-sync-request', requestId: 1, clientSend: Date.now() }).ok, true);
+    send(viewer.ws, { type: 'clock-sync-request', requestId: 1, clientSend: Date.now() });
+    assert.deepEqual(await viewer.next(), { type: 'protocol-error', code: 'not-authorized', message: 'Authentication is required' });
     send(viewer.ws, { type: 'auth', password: 'secret' });
     assert.deepEqual(await viewer.next(), { type: 'auth-success' });
     assert.deepEqual(await viewer.next(), { type: 'stream-status', active: false });
+    send(viewer.ws, { type: 'clock-sync-request', requestId: 2, clientSend: Date.now() });
+    const clockResponse = await viewer.next();
+    assert.equal(clockResponse.type, 'clock-sync-response');
+    assert.equal(clockResponse.requestId, 2);
+    assert.ok(Number.isFinite(clockResponse.serverReceive));
+    assert.ok(Number.isFinite(clockResponse.serverSend));
     host.ws.close(); viewer.ws.close();
 });
 

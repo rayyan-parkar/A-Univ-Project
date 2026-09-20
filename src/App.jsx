@@ -26,8 +26,8 @@ function App() {
     claimHost,
     authenticate,
     updateGraphData,
-    syncDelayMs,
-    setSyncDelayMs,
+    registerVideoElement,
+    syncStatus,
     graphData,
     liveIngestStatus
   } = session;
@@ -51,7 +51,8 @@ function App() {
         videoRef.current.srcObject = null;
       }
     }
-  }, [webrtc.localStream, webrtc.remoteStream, webrtc.isHostStreaming, role]);
+    registerVideoElement(videoRef.current);
+  }, [registerVideoElement, webrtc.localStream, webrtc.remoteStream, webrtc.isHostStreaming, role]);
 
   const getStatusClass = () => {
     const status = connectionStatus.toLowerCase();
@@ -107,6 +108,9 @@ function App() {
               Data Engine: {broadcaster.statusMessage}
             </span>
           )}
+          <span style={{ marginLeft: '20px', color: syncStatus === 'Auto' ? '#00ff00' : syncStatus === 'Estimated' ? '#60a5fa' : '#f1c40f' }}>
+            A/V Sync: {syncStatus}
+          </span>
         </div>
 
         <div className="grid-container">
@@ -185,20 +189,6 @@ function App() {
                   </div>
                 )}
 
-                <div className="host-sync-row">
-                  <span className="mode-label">A/V Sync Delay:</span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="400"
-                    step="10"
-                    value={syncDelayMs}
-                    onChange={(e) => setSyncDelayMs(parseInt(e.target.value) || 0)}
-                    className="sync-slider"
-                  />
-                  <span className="sync-value-pill">{syncDelayMs} ms</span>
-                  <span className="sync-hint">(Syncs graphs with camera feed latency)</span>
-                </div>
               </div>
             )}
 

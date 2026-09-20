@@ -341,10 +341,18 @@ export function createServer({ staticDir = DEFAULT_STATIC_DIR, logger = console,
         }
         hostTracks = [];
     }
-    function notifyStreamStatus(active) {
+    function sendStreamStatus(sock, active, { recoverable = false, reason } = {}) {
+        const message = { type: 'stream-status', active };
+        if (!active && recoverable) {
+            message.recoverable = true;
+            if (reason) message.reason = reason;
+        }
+        safeSend(sock, message);
+    }
+    function notifyStreamStatus(active, options) {
         for (const [sock, info] of connectedSockets.entries()) {
             if (info.role === 'viewer' && info.authenticated) {
-                safeSend(sock, { type: 'stream-status', active });
+                sendStreamStatus(sock, active, options);
             }
         }
     }
@@ -375,7 +383,7 @@ export function createServer({ staticDir = DEFAULT_STATIC_DIR, logger = console,
         }
         await state.pc.addIceCandidate(new RTCIceCandidate(candidate));
     }
-    function stopHostMedia() {
+    function stopHostMedia(options = {}) {
         const hadMedia = Boolean(hostPC || hostTracks.length || viewerPCs.size);
         hostPeerGeneration += 1;
         const currentHostPC = hostPC;
@@ -388,7 +396,7 @@ export function createServer({ staticDir = DEFAULT_STATIC_DIR, logger = console,
             clearIceQueue(sock);
             safeClosePeerConnection(pc);
         }
-        if (hadMedia) notifyStreamStatus(false);
+        if (hadMedia) notifyStreamStatus(false, options);
     }
     function broadcastPayload(message) {
         if (message?.type === 'telemetry-frame') latestTelemetryFrame = message;
@@ -466,7 +474,7 @@ export function createServer({ staticDir = DEFAULT_STATIC_DIR, logger = console,
             viewerPCs.delete(ws);
             clearIceQueue(ws);
             safeClosePeerConnection(pc);
-            safeSend(ws, { type: 'stream-status', active: false });
+            sendStreamStatus(ws, false, { recoverable: true, reason: 'viewer-peer-failure' });
         };
 
         try {
@@ -524,6 +532,8 @@ export function createServer({ staticDir = DEFAULT_STATIC_DIR, logger = console,
 
         pc.onconnectionstatechange = () => {
             if (hostPC === pc && ['failed', 'closed'].includes(pc.connectionState)) {
+                // Host peer failure clears the source tracks; viewers cannot
+                // recover it by requesting another viewer peer.
                 stopHostMedia();
             }
         };
@@ -541,12 +551,17 @@ export function createServer({ staticDir = DEFAULT_STATIC_DIR, logger = console,
 
                 for (const [sock, info] of connectedSockets.entries()) {
                     if (info.role === 'viewer' && info.authenticated) {
-                        safeSend(sock, { type: 'stream-status', active: true });
+                        if (hostPC !== pc || peerGeneration !== hostPeerGeneration || !connectedSockets.has(ws)) return;
+                        sendStreamStatus(sock, true);
                         try {
                             await setupViewerPC(sock);
                         } catch (error) {
                             logError('Viewer peer setup failed', error);
-                            safeSend(sock, { type: 'stream-status', active: false });
+                            if (hostPC === pc && peerGeneration === hostPeerGeneration && hostTracks.length > 0) {
+                                sendStreamStatus(sock, false, { recoverable: true, reason: 'viewer-peer-failure' });
+                            } else {
+                                sendStreamStatus(sock, false);
+                            }
                         }
                     }
                 }
@@ -757,10 +772,15 @@ export function createServer({ staticDir = DEFAULT_STATIC_DIR, logger = console,
                 }
                 client.lastRestartAt = Date.now();
                 if (hostTracks.length > 0) {
-                    await setupViewerPC(ws);
-                    safeSend(ws, { type: 'stream-status', active: true });
+                    try {
+                        await setupViewerPC(ws);
+                        sendStreamStatus(ws, true);
+                    } catch (error) {
+                        logError('Viewer peer setup failed', error);
+                        sendStreamStatus(ws, false, hostTracks.length > 0 ? { recoverable: true, reason: 'viewer-peer-failure' } : undefined);
+                    }
                 } else {
-                    safeSend(ws, { type: 'stream-status', active: false });
+                    sendStreamStatus(ws, false);
                 }
             } else if (parsed.type === 'auth') {
                 if (!ipAllowed(client)) {
@@ -794,10 +814,15 @@ export function createServer({ staticDir = DEFAULT_STATIC_DIR, logger = console,
 
                 if (latestTelemetryFrame) safeSend(ws, latestTelemetryFrame, true);
                 if (hostTracks.length > 0) {
-                    await setupViewerPC(ws);
-                    safeSend(ws, { type: 'stream-status', active: true });
+                    try {
+                        await setupViewerPC(ws);
+                        sendStreamStatus(ws, true);
+                    } catch (error) {
+                        logError('Viewer peer setup failed', error);
+                        sendStreamStatus(ws, false, hostTracks.length > 0 ? { recoverable: true, reason: 'viewer-peer-failure' } : undefined);
+                    }
                 } else {
-                    safeSend(ws, { type: 'stream-status', active: false });
+                    sendStreamStatus(ws, false);
                 }
             } else if (parsed.type === 'webrtc-offer') {
                 await handleHostOffer(ws, parsed.sdp);

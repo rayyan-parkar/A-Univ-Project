@@ -183,7 +183,7 @@ The viewer dashboard displays:
 * Low-, medium-, and high-precision constellation plots
 * Connection and stream status
 
-If the WebRTC video stream is interrupted, use **Restart Camera Stream** to request recovery without leaving the session.
+If a transient WebRTC peer or signaling failure interrupts the video stream, the viewer automatically requests recovery with bounded backoff. Intentional host camera stops remain inactive until the host starts the camera again.
 
 ---
 
@@ -401,7 +401,7 @@ Verify that:
 * Browser camera permissions are allowed
 * The Viewer is still connected
 
-Then select **Restart Camera Stream**.
+Transient peer failures are retried automatically. If automatic recovery eventually fails, verify the host camera is still running and reconnect the viewer if needed.
 
 ### Live ingest reports an error
 

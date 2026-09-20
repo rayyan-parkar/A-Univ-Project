@@ -1,6 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 const MAX_PENDING_CANDIDATES = 64;
+export const VIEWER_RECOVERY_MAX_ATTEMPTS = 4;
+export const VIEWER_RECOVERY_BASE_MS = 600;
+export const VIEWER_DISCONNECTED_GRACE_MS = 300;
+export const VIEWER_RECOVERY_MAX_DELAY_MS = 4800;
+
+export function viewerRecoveryDelay(attempt) {
+    const normalizedAttempt = Number.isFinite(attempt) ? Math.floor(attempt) : 0;
+    const exponent = Math.min(Math.max(0, normalizedAttempt), VIEWER_RECOVERY_MAX_ATTEMPTS - 1);
+    return Math.min(VIEWER_RECOVERY_MAX_DELAY_MS, VIEWER_RECOVERY_BASE_MS * (2 ** exponent));
+}
 
 function stopMediaTracks(stream) {
     if (!stream) return;
@@ -35,6 +45,10 @@ export function useWebRTC(socketRef, role, socketEpoch = 0) {
     const retryTimersRef = useRef(new Set());
     const reofferSocketRef = useRef(null);
     const reofferInFlightRef = useRef(null);
+    const viewerRecoveryTimerRef = useRef(null);
+    const viewerRecoveryAttemptRef = useRef(0);
+    const viewerRecoveryGenerationRef = useRef(0);
+    const scheduleViewerRecoveryRef = useRef(null);
 
     const send = useCallback((payload, socket = socketRef.current) => {
         if (!socket || socket.readyState !== WebSocket.OPEN) return false;
@@ -58,6 +72,55 @@ export function useWebRTC(socketRef, role, socketEpoch = 0) {
             }
         }
     }, []);
+
+    const cancelViewerRecovery = useCallback((resetAttempts = true) => {
+        viewerRecoveryGenerationRef.current += 1;
+        if (viewerRecoveryTimerRef.current) {
+            clearTimeout(viewerRecoveryTimerRef.current);
+            viewerRecoveryTimerRef.current = null;
+        }
+        if (resetAttempts) viewerRecoveryAttemptRef.current = 0;
+    }, []);
+
+    const scheduleViewerRecovery = useCallback((delay = VIEWER_RECOVERY_BASE_MS) => {
+        const socket = socketRef.current;
+        if (role !== 'viewer' || !socket || socket.readyState !== WebSocket.OPEN || viewerRecoveryTimerRef.current) return;
+        if (viewerRecoveryAttemptRef.current >= VIEWER_RECOVERY_MAX_ATTEMPTS) {
+            setStreamError('Camera stream could not reconnect automatically.');
+            return;
+        }
+
+        const generation = ++viewerRecoveryGenerationRef.current;
+        const timer = setTimeout(() => {
+            if (viewerRecoveryTimerRef.current === timer) viewerRecoveryTimerRef.current = null;
+            if (generation !== viewerRecoveryGenerationRef.current || role !== 'viewer' || socketRef.current !== socket || socket.readyState !== WebSocket.OPEN) return;
+
+            const attempt = viewerRecoveryAttemptRef.current;
+            if (attempt >= VIEWER_RECOVERY_MAX_ATTEMPTS) {
+                setStreamError('Camera stream could not reconnect automatically.');
+                return;
+            }
+
+            viewerRecoveryAttemptRef.current = attempt + 1;
+            setStreamError(`Camera stream reconnecting automatically (${attempt + 1}/${VIEWER_RECOVERY_MAX_ATTEMPTS})...`);
+            send({ type: 'webrtc-restart-request' }, socket);
+
+            const nextDelay = viewerRecoveryDelay(attempt + 1);
+            const finalGeneration = viewerRecoveryGenerationRef.current;
+            const nextTimer = setTimeout(() => {
+                if (viewerRecoveryTimerRef.current === nextTimer) viewerRecoveryTimerRef.current = null;
+                if (finalGeneration !== viewerRecoveryGenerationRef.current || socketRef.current !== socket || role !== 'viewer') return;
+                if (viewerRecoveryAttemptRef.current >= VIEWER_RECOVERY_MAX_ATTEMPTS) {
+                    setStreamError('Camera stream could not reconnect automatically.');
+                } else {
+                    scheduleViewerRecoveryRef.current?.(0);
+                }
+            }, nextDelay);
+            viewerRecoveryTimerRef.current = nextTimer;
+        }, Math.max(0, delay));
+        viewerRecoveryTimerRef.current = timer;
+    }, [role, send, socketRef]);
+    scheduleViewerRecoveryRef.current = scheduleViewerRecovery;
 
     const createHostPeer = useCallback(async (stream, socket) => {
         if (!stream || !socket || socket.readyState !== WebSocket.OPEN) return false;
@@ -90,7 +153,7 @@ export function useWebRTC(socketRef, role, socketEpoch = 0) {
         pc.onconnectionstatechange = () => {
             if (['failed', 'closed'].includes(pc.connectionState) && pcRef.current === pc) {
                 reofferSocketRef.current = null;
-                setStreamError('Camera connection failed. Try restarting the camera.');
+                setStreamError('Camera connection failed; check the host camera.');
             }
         };
 
@@ -174,12 +237,31 @@ export function useWebRTC(socketRef, role, socketEpoch = 0) {
                 retryReoffer();
             } else if (parsed.type === 'config-success' && role === 'host') {
                 retryReoffer();
+            } else if (parsed.type === 'protocol-error' && role === 'viewer' && parsed.code === 'invalid-webrtc') {
+                setRemoteStream(null);
+                setIsHostStreaming(false);
+                closePeer();
+                cancelViewerRecovery(false);
+                setStreamError('Camera signaling failed; reconnecting automatically.');
+                scheduleViewerRecovery();
             } else if (parsed.type === 'stream-status') {
                 const active = Boolean(parsed.active);
                 setIsHostStreaming(active);
-                if (!active && role === 'viewer') {
-                    setRemoteStream(null);
-                    closePeer();
+                if (role === 'viewer') {
+                    if (active) {
+                        cancelViewerRecovery(false);
+                        setStreamError('');
+                    } else if (parsed.recoverable === true) {
+                        setRemoteStream(null);
+                        closePeer();
+                        cancelViewerRecovery(false);
+                        scheduleViewerRecovery();
+                    } else {
+                        cancelViewerRecovery();
+                        setRemoteStream(null);
+                        closePeer();
+                        setStreamError('');
+                    }
                 }
             } else if (parsed.type === 'webrtc-offer' && role === 'viewer') {
                 closePeer();
@@ -190,8 +272,10 @@ export function useWebRTC(socketRef, role, socketEpoch = 0) {
                 pendingCandidatesRef.current = [];
 
                 pc.ontrack = (eventTrack) => {
+                    if (pcRef.current !== pc || socketRef.current !== socket) return;
                     setRemoteStream(eventTrack.streams?.[0] || new MediaStream([eventTrack.track]));
                     setIsHostStreaming(true);
+                    cancelViewerRecovery();
                     setStreamError('');
                 };
 
@@ -200,11 +284,14 @@ export function useWebRTC(socketRef, role, socketEpoch = 0) {
                     if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
                         setRemoteStream(null);
                         setIsHostStreaming(false);
-                        setStreamError('Viewer stream connection failed. Use Restart Camera Stream.');
                         closePeer();
+                        cancelViewerRecovery(false);
+                        scheduleViewerRecovery();
                     } else if (pc.connectionState === 'disconnected') {
-                        setStreamError('Viewer stream is reconnecting...');
+                        setStreamError('Camera stream reconnecting automatically...');
+                        scheduleViewerRecovery(VIEWER_DISCONNECTED_GRACE_MS);
                     } else if (pc.connectionState === 'connected') {
+                        cancelViewerRecovery();
                         setStreamError('');
                     }
                 };
@@ -230,10 +317,13 @@ export function useWebRTC(socketRef, role, socketEpoch = 0) {
                         send({ type: 'webrtc-answer', sdp: pc.localDescription }, socket);
                     }
                 } catch (error) {
+                    if (pcRef.current !== pc || socketRef.current !== socket) return;
                     if (pcRef.current === pc) closePeer();
                     setRemoteStream(null);
                     setIsHostStreaming(false);
-                    setStreamError(`Viewer signaling failed: ${error.message || 'unknown error'}`);
+                    cancelViewerRecovery(false);
+                    setStreamError(`Camera signaling failed; reconnecting automatically: ${error.message || 'unknown error'}`);
+                    scheduleViewerRecovery();
                 }
             } else if (parsed.type === 'webrtc-answer' && role === 'host' && pcRef.current) {
                 const pc = pcRef.current;
@@ -272,6 +362,7 @@ export function useWebRTC(socketRef, role, socketEpoch = 0) {
             socket.removeEventListener('open', handleOpen);
             for (const timer of retryTimers) clearTimeout(timer);
             retryTimers.clear();
+            cancelViewerRecovery();
             closePeer();
             reofferSocketRef.current = null;
             reofferInFlightRef.current = null;
@@ -280,16 +371,17 @@ export function useWebRTC(socketRef, role, socketEpoch = 0) {
                 setIsHostStreaming(false);
             }
         };
-    }, [closePeer, createHostPeer, role, send, socketEpoch, socketRef]);
+    }, [cancelViewerRecovery, closePeer, createHostPeer, role, scheduleViewerRecovery, send, socketEpoch, socketRef]);
 
     useEffect(() => {
         localStreamRef.current = localStream;
     }, [localStream]);
 
     useEffect(() => () => {
+        cancelViewerRecovery();
         closePeer();
         stopMediaTracks(localStreamRef.current);
-    }, [closePeer]);
+    }, [cancelViewerRecovery, closePeer]);
 
     const startHostStream = useCallback(async () => {
         setStreamError('');
@@ -336,11 +428,6 @@ export function useWebRTC(socketRef, role, socketEpoch = 0) {
         setStreamError('');
     }, [closePeer, send]);
 
-    const restartViewerStream = useCallback(() => {
-        setStreamError('');
-        return send({ type: 'webrtc-restart-request' });
-    }, [send]);
-
     return {
         localStream,
         remoteStream,
@@ -348,6 +435,5 @@ export function useWebRTC(socketRef, role, socketEpoch = 0) {
         streamError,
         startHostStream,
         stopHostStream,
-        restartViewerStream,
     };
 }

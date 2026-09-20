@@ -213,9 +213,6 @@ function App() {
               ) : (
                 <img src={videoUnavailable} alt="Video Unavailable" />
               )}
-              {role === 'viewer' && !webrtc.isHostStreaming && (
-                <button className="host-btn camera-btn" onClick={webrtc.restartViewerStream}>Restart Camera Stream</button>
-              )}
               {webrtc.streamError && <p className="error-text">{webrtc.streamError}</p>}
             </div>
 

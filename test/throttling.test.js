@@ -12,6 +12,12 @@ import {
     RECONNECT_BASE_MS,
     RECONNECT_MAX_MS,
 } from '../src/hooks/useExperimentSession.js';
+import {
+    VIEWER_RECOVERY_BASE_MS,
+    VIEWER_RECOVERY_MAX_ATTEMPTS,
+    VIEWER_RECOVERY_MAX_DELAY_MS,
+    viewerRecoveryDelay,
+} from '../src/hooks/useWebRTC.js';
 import { createTelemetryFrame, validateTelemetryFrame } from '../src/telemetryProtocol.js';
 
 const apps = [];
@@ -215,6 +221,15 @@ test('calculates bounded exponential backoff with jitter for reconnection', () =
     assert.equal(delayHighAttempt, RECONNECT_MAX_MS);
     const delayMaxJitter = reconnectDelay(20, 1.0);
     assert.equal(delayMaxJitter, Math.round(RECONNECT_MAX_MS * 1.25));
+});
+
+test('bounds automatic viewer recovery and stays above server retry rate limit', () => {
+    assert.equal(viewerRecoveryDelay(0), VIEWER_RECOVERY_BASE_MS);
+    assert.equal(viewerRecoveryDelay(1), VIEWER_RECOVERY_BASE_MS * 2);
+    assert.equal(viewerRecoveryDelay(VIEWER_RECOVERY_MAX_ATTEMPTS), VIEWER_RECOVERY_MAX_DELAY_MS);
+    assert.equal(viewerRecoveryDelay(100), VIEWER_RECOVERY_MAX_DELAY_MS);
+    assert.equal(viewerRecoveryDelay(Number.NaN), VIEWER_RECOVERY_BASE_MS);
+    assert.ok(viewerRecoveryDelay(0) > 500);
 });
 
 test('bounds delayed telemetry enqueue while retaining newest complete frames', () => {
